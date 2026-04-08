@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Gaze Pattern Shooter</title>
+
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+
+<style>
+body { margin:0; }
+</style>
+</head>
+
+<body>
+
+<a-scene background="color:#111">
+
+  <!-- CAMERA + GAZE -->
+  <a-entity camera look-controls position="0 1.6 0">
+
+    <a-cursor
+      fuse="true"
+      fuse-timeout="2000"
+      geometry="primitive:ring; radiusInner:0.01; radiusOuter:0.015"
+      color="white">
+    </a-cursor>
+
+    <!-- LIFE DISPLAY -->
+    <a-text
+      id="lifeText"
+      value="Lives: 3"
+      position="0 -0.4 -1"
+      align="center"
+      color="white"
+      width="2">
+    </a-text>
+
+  </a-entity>
+
+  <!-- LIGHTS -->
+  <a-light type="ambient" intensity="0.6"></a-light>
+  <a-light type="directional" position="1 3 2" intensity="1"></a-light>
+
+  <!-- TARGET BALL -->
+  <a-sphere
+      id="targetBall"
+      position="0 1.6 -1.5"
+      radius="0.25"
+      color="yellow">
+  </a-sphere>
+
+  <!-- GAME OVER TEXT -->
+  <a-text
+    id="gameOver"
+    value="GAME OVER"
+    visible="false"
+    position="0 2 -2"
+    align="center"
+    color="red"
+    width="6">
+  </a-text>
+
+  <a-entity id="grid"></a-entity>
+
+</a-scene>
+
+
+<script>
+
+//////////////////////////////
+// GAME STATE
+//////////////////////////////
+
+const patterns = ["red","blue","green","purple","orange"];
+
+let lives = 3;
+let gameActive = true;
+
+const lifeText = document.querySelector("#lifeText");
+const gameOverText = document.querySelector("#gameOver");
+
+function updateLives(){
+  lifeText.setAttribute("value","Lives: " + lives);
+}
+
+function endGame(){
+  gameActive = false;
+  gameOverText.setAttribute("visible", true);
+}
+
+
+//////////////////////////////
+// TARGET PATTERN
+//////////////////////////////
+
+let targetPattern =
+  patterns[Math.floor(Math.random()*patterns.length)];
+
+document.querySelector("#targetBall")
+  .setAttribute("color", targetPattern);
+
+
+//////////////////////////////
+// CREATE GRID
+//////////////////////////////
+
+const grid = document.querySelector("#grid");
+
+const rows = 4;
+const cols = 5;
+const spacing = 0.9;
+
+for(let r=0;r<rows;r++){
+  for(let c=0;c<cols;c++){
+
+    const sphere = document.createElement("a-sphere");
+
+    let pattern =
+      patterns[Math.floor(Math.random()*patterns.length)];
+
+    sphere.setAttribute("radius","0.25");
+
+    sphere.setAttribute(
+      "position",
+      `${(c-cols/2)*spacing} ${1.6+(rows/2-r)*spacing} -4`
+    );
+
+    sphere.setAttribute("color",pattern);
+    sphere.dataset.pattern = pattern;
+
+    addGazeShootLogic(sphere);
+
+    grid.appendChild(sphere);
+  }
+}
+
+
+//////////////////////////////
+// GAZE SHOOT
+//////////////////////////////
+
+function addGazeShootLogic(ball){
+
+  ball.addEventListener("mouseenter",()=>{
+    if(!gameActive) return;
+    ball.setAttribute("scale","1.2 1.2 1.2");
+  });
+
+  ball.addEventListener("mouseleave",()=>{
+    ball.setAttribute("scale","1 1 1");
+  });
+
+  ball.addEventListener("click",()=>{
+    if(!gameActive) return;
+    shootBall(ball);
+  });
+}
+
+
+//////////////////////////////
+// SHOOTING
+//////////////////////////////
+
+function shootBall(target){
+  createProjectile(target);
+}
+
+
+//////////////////////////////
+// PROJECTILE + HIT CHECK
+//////////////////////////////
+
+function createProjectile(target){
+
+  const projectile = document.createElement("a-sphere");
+
+  projectile.setAttribute("radius","0.08");
+  projectile.setAttribute("color","white");
+  projectile.setAttribute("position","0 1.6 -0.5");
+
+  document.querySelector("a-scene")
+    .appendChild(projectile);
+
+  const targetPos = target.object3D.position;
+
+  projectile.setAttribute("animation",{
+    property:"position",
+    to:`${targetPos.x} ${targetPos.y} ${targetPos.z}`,
+    dur:500,
+    easing:"linear"
+  });
+
+  setTimeout(()=>{
+
+    if(target.dataset.pattern === targetPattern){
+
+      target.parentNode.removeChild(target);
+
+    }else{
+
+      // WRONG HIT → LOSE LIFE
+      lives--;
+      updateLives();
+
+      target.setAttribute("color","#333");
+
+      if(lives <= 0){
+        endGame();
+      }
+    }
+
+    projectile.parentNode.removeChild(projectile);
+
+  },500);
+}
+
+</script>
+
+</body>
+</html>
