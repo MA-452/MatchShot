@@ -31,19 +31,15 @@ body { margin: 0; overflow: hidden; }
 
 <button id="enterVR" onclick="AFRAME.scenes[0].enterVR()">Enter VR</button>
 
-<a-scene vr-mode-ui="enabled: true" background="color:#111">
+<!-- Audio elements live outside <a-assets> so they never block scene rendering -->
+<audio id="bgMusic"   src="https://cdn.freesound.org/previews/612/612886_5674468-lq.mp3"
+  preload="auto" loop crossorigin="anonymous" style="display:none"></audio>
+<audio id="hitSound"  src="https://cdn.freesound.org/previews/341/341695_5858296-lq.mp3"
+  preload="auto" crossorigin="anonymous" style="display:none"></audio>
+<audio id="missSound" src="https://cdn.freesound.org/previews/142/142608_1840739-lq.mp3"
+  preload="auto" crossorigin="anonymous" style="display:none"></audio>
 
-  <a-assets timeout="15000">
-    <audio id="bgMusic"
-      src="https://cdn.freesound.org/previews/612/612886_5674468-lq.mp3"
-      preload="auto" loop crossorigin="anonymous"></audio>
-    <audio id="hitSound"
-      src="https://cdn.freesound.org/previews/341/341695_5858296-lq.mp3"
-      preload="auto" crossorigin="anonymous"></audio>
-    <audio id="missSound"
-      src="https://cdn.freesound.org/previews/142/142608_1840739-lq.mp3"
-      preload="auto" crossorigin="anonymous"></audio>
-  </a-assets>
+<a-scene vr-mode-ui="enabled: true" background="color:#111" loading-screen="enabled: false">
 
   <!-- LIGHTS -->
   <a-light type="ambient" intensity="0.6"></a-light>
@@ -69,7 +65,7 @@ body { margin: 0; overflow: hidden; }
       fuse-timeout="2000"
       geometry="primitive:ring; radiusInner:0.01; radiusOuter:0.015"
       color="white"
-      raycaster="far: 20; objects: .btn, a-sphere">
+      raycaster="far: 20">
     </a-cursor>
 
     <!-- HUD: score (left) and lives (right); hidden until game starts -->
@@ -97,24 +93,20 @@ body { margin: 0; overflow: hidden; }
         material="opacity: 0.98; transparent: true">
       </a-plane>
       <a-text value="Gaze Pattern Shooter"
-        position="0 1.1 -2.45"
+        position="0 0.8 -2.45"
         align="center" color="gold" width="5.5">
       </a-text>
       <a-text value="Matias Aldom"
-        position="0 0.5 -2.45"
+        position="0 0.3 -2.45"
         align="center" color="white" width="4">
       </a-text>
       <a-text value="CMPT 461"
-        position="0 0.05 -2.45"
+        position="0 -0.05 -2.45"
         align="center" color="#aaaaaa" width="3">
       </a-text>
-      <!--
-        Buttons are a-plane elements (reliably raycasted).
-        The "text" component renders the label on the plane surface.
-        class="btn" makes the cursor raycaster target them.
-      -->
+      <!-- Button at -0.38 = ~9° below center: reachable with a slight look-down -->
       <a-plane id="startBtn" class="btn"
-        position="0 -0.72 -2.45"
+        position="0 -0.38 -2.45"
         width="2.8" height="0.4"
         material="color: #004444; transparent: true; opacity: 0.9"
         text="value: GAZE TO START; color: cyan; align: center; width: 7">
@@ -128,49 +120,49 @@ body { margin: 0; overflow: hidden; }
         material="opacity: 0.98; transparent: true">
       </a-plane>
       <a-text value="SETTINGS"
-        position="0 1.2 -2.45"
+        position="0 0.85 -2.45"
         align="center" color="gold" width="4">
       </a-text>
 
-      <!-- Difficulty -->
+      <!-- Difficulty row -->
       <a-text value="Difficulty:"
-        position="-1.55 0.52 -2.45"
+        position="-1.55 0.38 -2.45"
         align="left" color="white" width="2.8">
       </a-text>
       <a-plane id="btnEasy" class="btn"
-        position="-0.3 0.52 -2.45"
+        position="-0.3 0.38 -2.45"
         width="1.1" height="0.32"
         material="color: #004444; transparent: true; opacity: 0.9"
         text="value: EASY; color: cyan; align: center; width: 3.5">
       </a-plane>
       <a-plane id="btnHard" class="btn"
-        position="1.0 0.52 -2.45"
+        position="1.0 0.38 -2.45"
         width="1.1" height="0.32"
         material="color: #1a1a1a; transparent: true; opacity: 0.9"
         text="value: HARD; color: #777; align: center; width: 3.5">
       </a-plane>
 
-      <!-- Music -->
+      <!-- Music row -->
       <a-text value="Music:"
-        position="-1.55 -0.08 -2.45"
+        position="-1.55 -0.12 -2.45"
         align="left" color="white" width="2.8">
       </a-text>
       <a-plane id="btnMusicOn" class="btn"
-        position="-0.5 -0.08 -2.45"
+        position="-0.5 -0.12 -2.45"
         width="0.88" height="0.32"
         material="color: #004444; transparent: true; opacity: 0.9"
         text="value: ON; color: cyan; align: center; width: 2.5">
       </a-plane>
       <a-plane id="btnMusicOff" class="btn"
-        position="0.55 -0.08 -2.45"
+        position="0.55 -0.12 -2.45"
         width="0.88" height="0.32"
         material="color: #1a1a1a; transparent: true; opacity: 0.9"
         text="value: OFF; color: #777; align: center; width: 2.5">
       </a-plane>
 
-      <!-- Begin -->
+      <!-- Begin button — slightly below center, easy to reach -->
       <a-plane id="btnBegin" class="btn"
-        position="0 -0.88 -2.45"
+        position="0 -0.55 -2.45"
         width="1.8" height="0.4"
         material="color: #004400; transparent: true; opacity: 0.9"
         text="value: BEGIN; color: lime; align: center; width: 5">
@@ -185,16 +177,16 @@ body { margin: 0; overflow: hidden; }
       </a-plane>
       <a-text id="gameOverTitle"
         value="GAME OVER"
-        position="0 0.9 -2.45"
+        position="0 0.65 -2.45"
         align="center" color="red" width="6">
       </a-text>
       <a-text id="finalScore"
         value="Score: 0"
-        position="0 0.2 -2.45"
+        position="0 0.1 -2.45"
         align="center" color="white" width="4">
       </a-text>
       <a-plane id="playAgainBtn" class="btn"
-        position="0 -0.58 -2.45"
+        position="0 -0.38 -2.45"
         width="2.2" height="0.4"
         material="color: #004444; transparent: true; opacity: 0.9"
         text="value: PLAY AGAIN; color: cyan; align: center; width: 5.5">
