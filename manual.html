@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gaze Pattern Shooter — Manual</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&family=Exo+2:ital,wght@0,300;0,400;0,700;1,300&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #060c14;
+    --bg2:      #0b1422;
+    --bg3:      #0f1e32;
+    --cyan:     #00e5ff;
+    --cyan-dim: #007a99;
+    --gold:     #ffaa00;
+    --pink:     #ff44ff;
+    --green:    #44ff88;
+    --red:      #ff2244;
+    --text:     #c8dce8;
+    --text-dim: #5a7a90;
+    --border:   rgba(0,229,255,0.15);
+    --glow:     0 0 18px rgba(0,229,255,0.25);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Exo 2', sans-serif;
+    font-weight: 300;
+    line-height: 1.7;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── SCANLINE OVERLAY ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 3px,
+      rgba(0,0,0,0.06) 3px,
+      rgba(0,0,0,0.06) 4px
+    );
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  /* ── HERO ── */
+  .hero {
+    position: relative;
+    text-align: center;
+    padding: 80px 24px 60px;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 80% 60% at 50% 0%, rgba(0,229,255,0.08) 0%, transparent 70%),
+      radial-gradient(ellipse 40% 40% at 20% 80%, rgba(255,68,255,0.05) 0%, transparent 60%);
+    pointer-events: none;
+  }
+  .hero-eyebrow {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 4px;
+    color: var(--cyan-dim);
+    text-transform: uppercase;
+    margin-bottom: 20px;
+  }
+  .hero h1 {
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    font-size: clamp(2.4rem, 6vw, 4.2rem);
+    letter-spacing: 0.08em;
+    color: var(--cyan);
+    text-shadow: 0 0 40px rgba(0,229,255,0.4), 0 0 80px rgba(0,229,255,0.15);
+    line-height: 1.1;
+    margin-bottom: 12px;
+  }
+  .hero-sub {
+    font-family: 'Exo 2', sans-serif;
+    font-weight: 300;
+    font-style: italic;
+    color: var(--text-dim);
+    font-size: 1rem;
+    margin-bottom: 36px;
+  }
+  .hero-meta {
+    display: inline-flex;
+    gap: 28px;
+    background: rgba(0,229,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 10px 28px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+  }
+  .hero-meta span { color: var(--cyan); }
+
+  /* ── GRID LINES DECO ── */
+  .grid-deco {
+    width: 100%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--cyan-dim), transparent);
+    margin: 0 0 0;
+    opacity: 0.4;
+  }
+
+  /* ── NAV ── */
+  nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(6,12,20,0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+    padding: 0 16px;
+    overflow-x: auto;
+  }
+  nav a {
+    display: block;
+    padding: 14px 18px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    text-decoration: none;
+    text-transform: uppercase;
+    white-space: nowrap;
+    transition: color 0.2s;
+    border-bottom: 2px solid transparent;
+  }
+  nav a:hover {
+    color: var(--cyan);
+    border-bottom-color: var(--cyan);
+  }
+
+  /* ── LAYOUT ── */
+  .container {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* ── SECTION ── */
+  section {
+    padding: 64px 0 48px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  section:last-of-type { border-bottom: none; }
+
+  .section-tag {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 4px;
+    color: var(--cyan-dim);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  h2 {
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    font-size: clamp(1.5rem, 3.5vw, 2.1rem);
+    color: #ffffff;
+    letter-spacing: 0.04em;
+    margin-bottom: 28px;
+  }
+  h2 .accent { color: var(--cyan); }
+  h3 {
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 600;
+    font-size: 1.15rem;
+    color: var(--gold);
+    letter-spacing: 0.06em;
+    margin: 28px 0 10px;
+  }
+  p { margin-bottom: 16px; }
+  p:last-child { margin-bottom: 0; }
+
+  /* ── CARDS ── */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 16px;
+    margin-top: 24px;
+  }
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 20px 22px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .card:hover {
+    border-color: var(--cyan-dim);
+    box-shadow: var(--glow);
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--cyan);
+    opacity: 0.5;
+  }
+  .card-icon {
+    font-size: 1.6rem;
+    margin-bottom: 10px;
+    display: block;
+  }
+  .card-title {
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    font-size: 0.95rem;
+    letter-spacing: 0.06em;
+    color: var(--cyan);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+  }
+  .card p {
+    font-size: 0.88rem;
+    color: var(--text-dim);
+    margin: 0;
+  }
+
+  /* ── STEP LIST ── */
+  .steps {
+    counter-reset: step;
+    list-style: none;
+    margin-top: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .steps li {
+    counter-increment: step;
+    display: flex;
+    gap: 18px;
+    align-items: flex-start;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 16px 20px;
+  }
+  .steps li::before {
+    content: counter(step, decimal-leading-zero);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 1.1rem;
+    color: var(--cyan);
+    min-width: 32px;
+    margin-top: 1px;
+  }
+  .steps li strong {
+    display: block;
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    font-size: 1rem;
+    color: #fff;
+    letter-spacing: 0.04em;
+    margin-bottom: 4px;
+  }
+  .steps li span {
+    font-size: 0.88rem;
+    color: var(--text-dim);
+  }
+
+  /* ── CODE BLOCK ── */
+  .code-block {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--cyan);
+    border-radius: 2px;
+    padding: 14px 18px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.82rem;
+    color: var(--cyan);
+    margin: 16px 0;
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  /* ── INLINE CODE ── */
+  code {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.85em;
+    color: var(--cyan);
+    background: rgba(0,229,255,0.07);
+    padding: 1px 6px;
+    border-radius: 2px;
+  }
+
+  /* ── CONTROLS TABLE ── */
+  .controls-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+    font-size: 0.9rem;
+  }
+  .controls-table thead tr {
+    background: var(--bg3);
+    border-bottom: 1px solid var(--cyan-dim);
+  }
+  .controls-table th {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 3px;
+    color: var(--cyan);
+    text-transform: uppercase;
+    padding: 10px 16px;
+    text-align: left;
+  }
+  .controls-table td {
+    padding: 10px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    color: var(--text);
+    vertical-align: top;
+  }
+  .controls-table tr:last-child td { border-bottom: none; }
+  .controls-table tr:hover td { background: rgba(0,229,255,0.03); }
+  .key {
+    display: inline-block;
+    background: var(--bg3);
+    border: 1px solid var(--cyan-dim);
+    border-radius: 3px;
+    padding: 1px 9px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.78rem;
+    color: var(--cyan);
+    white-space: nowrap;
+  }
+
+  /* ── SCORING TABLE ── */
+  .score-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    font-size: 0.9rem;
+  }
+  .score-row:last-child { border-bottom: none; }
+  .score-row .label { color: var(--text); }
+  .score-row .value { font-family: 'Share Tech Mono', monospace; }
+  .score-row .value.pos { color: var(--green); }
+  .score-row .value.neg { color: var(--red); }
+  .score-box {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 20px;
+  }
+  .score-box-header {
+    background: var(--bg3);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 20px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 3px;
+    color: var(--cyan-dim);
+    text-transform: uppercase;
+  }
+
+  /* ── LEVEL PILLS ── */
+  .level-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 20px;
+  }
+  .level-pill {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 20px 22px;
+    position: relative;
+    overflow: hidden;
+  }
+  .level-pill::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+  }
+  .level-pill.l1::before { background: var(--green); }
+  .level-pill.l2::before { background: var(--pink); }
+  .level-pill .lnum {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.68rem;
+    letter-spacing: 3px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .level-pill .lname {
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    font-size: 1.1rem;
+    letter-spacing: 0.06em;
+    margin-bottom: 10px;
+  }
+  .level-pill.l1 .lname { color: var(--green); }
+  .level-pill.l2 .lname { color: var(--pink); }
+  .level-pill p {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    margin: 0;
+  }
+
+  /* ── TIP BOX ── */
+  .tip {
+    display: flex;
+    gap: 14px;
+    background: rgba(255,170,0,0.05);
+    border: 1px solid rgba(255,170,0,0.25);
+    border-left: 3px solid var(--gold);
+    border-radius: 2px;
+    padding: 14px 18px;
+    margin: 20px 0;
+    font-size: 0.88rem;
+    color: var(--text);
+  }
+  .tip-icon { color: var(--gold); font-size: 1.1rem; flex-shrink: 0; margin-top: 1px; }
+  .tip strong { color: var(--gold); }
+
+  /* ── BADGE PILLS ── */
+  .badge-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .badge {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 1px;
+    padding: 4px 12px;
+    border-radius: 2px;
+    border: 1px solid;
+  }
+  .badge.cyan  { color: var(--cyan);  border-color: var(--cyan-dim);  background: rgba(0,229,255,0.06); }
+  .badge.gold  { color: var(--gold);  border-color: rgba(255,170,0,0.4); background: rgba(255,170,0,0.06); }
+  .badge.green { color: var(--green); border-color: rgba(68,255,136,0.4); background: rgba(68,255,136,0.06); }
+  .badge.pink  { color: var(--pink);  border-color: rgba(255,68,255,0.4); background: rgba(255,68,255,0.06); }
+
+  /* ── COLOUR SWATCHES ── */
+  .swatch-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 16px;
+  }
+  .swatch {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 8px 14px;
+    font-size: 0.82rem;
+  }
+  .swatch-dot {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 6px currentColor;
+  }
+
+  /* ── FOOTER ── */
+  footer {
+    text-align: center;
+    padding: 48px 24px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    letter-spacing: 2px;
+    border-top: 1px solid var(--border);
+  }
+  footer a { color: var(--cyan-dim); text-decoration: none; }
+  footer a:hover { color: var(--cyan); }
+
+  /* ── ANIMATIONS ── */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .hero h1, .hero-sub, .hero-meta {
+    animation: fadeUp 0.7s ease both;
+  }
+  .hero-sub  { animation-delay: 0.1s; }
+  .hero-meta { animation-delay: 0.2s; }
+
+  @media (max-width: 600px) {
+    .level-grid { grid-template-columns: 1fr; }
+    .hero-meta  { flex-direction: column; gap: 8px; text-align: center; }
+    .steps li   { flex-direction: column; gap: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════
+     HERO
+═══════════════════════════════ -->
+<header class="hero">
+  <p class="hero-eyebrow">CMPT 461 — Immersive Computing &nbsp;|&nbsp; A-Frame WebVR</p>
+  <h1>GAZE PATTERN<br>SHOOTER</h1>
+  <p class="hero-sub">Player Manual &amp; Setup Guide</p>
+  <div class="hero-meta">
+    <div>PLATFORM <span>WebVR / Mobile</span></div>
+    <div>ENGINE <span>A-Frame 1.5</span></div>
+    <div>CONTROL <span>Gaze (Fuse)</span></div>
+    <div>ROUNDS <span>5</span></div>
+  </div>
+</header>
+<div class="grid-deco"></div>
+
+<!-- ═══════════════════════════════
+     NAV
+═══════════════════════════════ -->
+<nav>
+  <a href="#overview">Overview</a>
+  <a href="#setup">Setup</a>
+  <a href="#controls">Controls</a>
+  <a href="#howtoplay">How to Play</a>
+  <a href="#levels">Levels</a>
+  <a href="#scoring">Scoring</a>
+  <a href="#tips">Tips</a>
+</nav>
+
+<!-- ═══════════════════════════════
+     OVERVIEW
+═══════════════════════════════ -->
+<section id="overview">
+  <div class="container">
+    <p class="section-tag">§ 01</p>
+    <h2>Game <span class="accent">Overview</span></h2>
+    <p>
+      Gaze Pattern Shooter is a mobile WebVR game where you use only your gaze
+      to identify and destroy colour-matching balls in a 3D grid. A target ball
+      is shown in the lower-centre of your view — find every ball in the grid
+      that matches its colour and stare at each one to fire a projectile.
+      Clear all matching balls to advance through waves and rounds.
+    </p>
+    <p>
+      The game runs entirely in the browser and requires no installation
+      beyond a WebVR-capable phone and a Google Cardboard (or equivalent) headset.
+      It can also be played on a desktop browser using mouse-look.
+    </p>
+
+    <div class="badge-row">
+      <span class="badge cyan">No Controller Needed</span>
+      <span class="badge cyan">Works on Mobile Chrome</span>
+      <span class="badge gold">Google Cardboard Compatible</span>
+      <span class="badge green">Mouse-Look on Desktop</span>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════
+     SETUP
+═══════════════════════════════ -->
+<section id="setup">
+  <div class="container">
+    <p class="section-tag">§ 02</p>
+    <h2>Setup &amp; <span class="accent">Installation</span></h2>
+
+    <h3>Option A — Play from GitHub Pages (recommended)</h3>
+    <p>No installation required. Open the live link in your browser:</p>
+    <div class="code-block">https://ma-452.github.io/MatchShot/&gt;/</div>
+    <p>
+      Replace <code>&lt;your-username&gt;</code> and <code>&lt;your-repo&gt;</code> with your
+      GitHub username and repository name. The game loads directly in the browser.
+    </p>
+
+    <h3>Option B — Run locally</h3>
+    <ol class="steps">
+      <li>
+        <div>
+          <strong>Download the repository</strong>
+          <span>Click <em>Code → Download ZIP</em> on GitHub, or clone with
+          <code>git clone https://github.com/&lt;user&gt;/&lt;repo&gt;.git</code></span>
+        </div>
+      </li>
+      <li>
+        <div>
+          <strong>Serve the files over HTTP</strong>
+          <span>A local server is required for audio to load. If you have Python installed, run the command below from the project folder:</span>
+        </div>
+      </li>
+      <li>
+        <div>
+          <strong>Open in browser</strong>
+          <span>Navigate to <code>http://localhost:8000</code> in Chrome or Firefox.</span>
+        </div>
+      </li>
+    </ol>
+    <div class="code-block">cd path/to/project
+python -m http.server 8000</div>
+
+    <div class="tip">
+      <span class="tip-icon">⚠</span>
+      <div>
+        <strong>Do not open index.html directly</strong> as a <code>file://</code> URL —
+        audio and some textures will fail due to browser security restrictions.
+        Always use a local server or GitHub Pages.
+      </div>
+    </div>
+
+    <h3>Mobile VR setup (Google Cardboard)</h3>
+    <ol class="steps">
+      <li>
+        <div>
+          <strong>Open the game URL on your phone</strong>
+          <span>Use Chrome on Android or Safari on iOS. Make sure the page is fully loaded before inserting your phone.</span>
+        </div>
+      </li>
+      <li>
+        <div>
+          <strong>Tap "⬡ ENTER VR"</strong>
+          <span>The button appears at the bottom of the screen. This switches to stereoscopic split-screen mode.</span>
+        </div>
+      </li>
+      <li>
+        <div>
+          <strong>Insert phone into headset</strong>
+          <span>Place your phone in a Google Cardboard or compatible VR viewer. The game now responds to head movement.</span>
+        </div>
+      </li>
+      <li>
+        <div>
+          <strong>Use gaze to navigate all menus</strong>
+          <span>Point the centre dot (reticle) at a button and hold for 2 seconds to activate it. No tapping needed.</span>
+        </div>
+      </li>
+    </ol>
+
+    <h3>Requirements</h3>
+    <div class="card-grid">
+      <div class="card">
+        <span class="card-icon">📱</span>
+        <div class="card-title">Mobile (VR mode)</div>
+        <p>Android Chrome 90+ or iOS Safari 15+. Gyroscope required for head tracking.</p>
+      </div>
+      <div class="card">
+        <span class="card-icon">🖥</span>
+        <div class="card-title">Desktop (flat mode)</div>
+        <p>Any modern browser — Chrome, Firefox, Edge, Safari. Mouse-drag to look around.</p>
+      </div>
+      <div class="card">
+        <span class="card-icon">📡</span>
+        <div class="card-title">Network</div>
+        <p>Internet connection needed to load A-Frame library, fonts, and audio from CDN on first load.</p>
+      </div>
+      <div class="card">
+        <span class="card-icon">🥽</span>
+        <div class="card-title">Headset (optional)</div>
+        <p>Google Cardboard v1/v2 or any Cardboard-compatible viewer. Not required for desktop play.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════
+     CONTROLS
+═══════════════════════════════ -->
+<section id="controls">
+  <div class="container">
+    <p class="section-tag">§ 03</p>
+    <h2>Controls &amp; <span class="accent">Input</span></h2>
+    <p>
+      The game is designed to be played <strong>hands-free</strong> using gaze
+      (fuse-based cursor). A white ring reticle at the centre of your view
+      acts as your only input device.
+    </p>
+
+    <table class="controls-table">
+      <thead>
+        <tr>
+          <th>Action</th>
+          <th>Mobile VR</th>
+          <th>Desktop</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Look around</td>
+          <td>Move your head</td>
+          <td>Click + drag, or arrow keys</td>
+        </tr>
+        <tr>
+          <td>Activate button / shoot ball</td>
+          <td>Centre reticle on target and hold for <span class="key">2 sec</span></td>
+          <td>Move reticle with mouse onto target, hold for <span class="key">2 sec</span></td>
+        </tr>
+        <tr>
+          <td>Hover feedback</td>
+          <td>Ball scales up when reticle enters its hitbox</td>
+          <td>Same</td>
+        </tr>
+        <tr>
+          <td>Enter VR mode</td>
+          <td>Tap the <span class="key">⬡ ENTER VR</span> button on screen</td>
+          <td>Click the VR goggles icon (bottom-right of canvas)</td>
+        </tr>
+        <tr>
+          <td>Hard mode fuse</td>
+          <td>Hold reticle for only <span class="key">1.2 sec</span></td>
+          <td>Same</td>
+        </tr>
+        <tr>
+          <td>Wave 2 fuse (all difficulties)</td>
+          <td>Fuse timeout decreases by 400 ms from base</td>
+          <td>Same</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="tip">
+      <span class="tip-icon">💡</span>
+      <div>
+        <strong>Reticle tip:</strong> Each ball has an invisible hitbox larger than its
+        visible surface. You do not need to aim at the exact centre — anywhere within
+        the ball's general area will trigger the hover and fire.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════
+     HOW TO PLAY
+═══════════════════════════════ -->
+<section id="howtoplay">
+  <div class="container">
+    <p class="section-tag">§ 04</p>
+    <h2>How to <span class="accent">Play</span></h2>
+
+    <ol class="steps">
+      <li>
+        <div>
+          <strong>Flash Screen</strong>
+          <span>The title screen appears when the game loads. Gaze at <em>[ GAZE TO START ]</em> and hold for 2 seconds to proceed.</span>
+        </div>
+      </li>
+      <li>
+        <div>
+          <strong>Setup Menu</strong>
+          <span>Choose your difficulty (Easy or Hard) and whether background music plays. Gaze at <em>[ BEGIN ]</em> to start.</span>
+        </div>
+      </li>
+      <li>
+        <div>
+          <strong>Identify the target colour</strong>
+          <span>A textured ball labelled <em>TARGET</em> appears in the lower-centre of your view. Remember its colour and pattern.</span>
+        </div>
+      </li>
+      <li>
+        <div>
+          <strong>Shoot matching balls</strong>
+          <span>Find every ball in the grid that matches the target colour. Gaze at each one to fire a projectile. Correct hits score +10 points and destroy the ball. Wrong colour hits cost -5 points and one life.</span>
+        </div>
+      </li>
+      <li>
+        <div>
+          <strong>Wave 2 begins automatically</strong>
+          <span>Once all matching balls are cleared, Wave 2 starts. A new target colour is chosen from an expanded set of 6 colours and the fuse timer gets shorter.</span>
+        </div>
+      </li>
+      <li>
+        <div>
+          <strong>Round complete</strong>
+          <span>Clearing Wave 2 ends the round. A new round begins with a fresh grid. There are 5 rounds total.</span>
+        </div>
+      </li>
+      <li>
+        <div>
+          <strong>Win or lose</strong>
+          <span>Clear all 5 rounds to win. Lose all 3 lives or run out of time to get Game Over. Gaze at <em>[ PLAY AGAIN ]</em> to return to Setup.</span>
+        </div>
+      </li>
+    </ol>
+
+    <h3>Ball Colours</h3>
+    <div class="swatch-grid">
+      <div class="swatch"><span class="swatch-dot" style="background:#cc2200;color:#cc2200"></span> Red</div>
+      <div class="swatch"><span class="swatch-dot" style="background:#1144cc;color:#1144cc"></span> Blue</div>
+      <div class="swatch"><span class="swatch-dot" style="background:#1a8c3a;color:#1a8c3a"></span> Green</div>
+      <div class="swatch"><span class="swatch-dot" style="background:#6622bb;color:#6622bb"></span> Purple</div>
+      <div class="swatch"><span class="swatch-dot" style="background:#cc6600;color:#cc6600"></span> Orange</div>
+      <div class="swatch"><span class="swatch-dot" style="background:#cc2277;color:#cc2277"></span> Pink <em style="font-size:0.75rem;color:var(--text-dim)">(Wave 2 only)</em></div>
+    </div>
+    <p style="margin-top:14px;font-size:0.85rem;color:var(--text-dim)">
+      All balls use procedurally generated canvas textures with a dot-grid pattern overlay and radial highlight — no two look completely identical.
+    </p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════
+     LEVELS
+═══════════════════════════════ -->
+<section id="levels">
+  <div class="container">
+    <p class="section-tag">§ 05</p>
+    <h2>Levels &amp; <span class="accent">Difficulty</span></h2>
+    <p>
+      Each of the 5 rounds contains two waves. Difficulty affects grid size and
+      how long you must hold your gaze to fire.
+    </p>
+
+    <div class="level-grid">
+      <div class="level-pill l1">
+        <p class="lnum">Wave 01 — all rounds</p>
+        <p class="lname">Primary Wave</p>
+        <p>Grid uses 5 colours (red, blue, green, purple, orange). At least 3 balls always match the target. Base fuse timeout applies.</p>
+      </div>
+      <div class="level-pill l2">
+        <p class="lnum">Wave 02 — all rounds</p>
+        <p class="lname">Surge Wave</p>
+        <p>Pink is added as a 6th colour. Fuse timeout is reduced by 400 ms. A new target is chosen from all 6 colours.</p>
+      </div>
+    </div>
+
+    <table class="controls-table" style="margin-top:24px">
+      <thead>
+        <tr>
+          <th>Difficulty</th>
+          <th>Grid Size</th>
+          <th>Base Fuse</th>
+          <th>Wave 2 Fuse</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span style="color:var(--green);font-family:'Rajdhani',sans-serif;font-weight:700">EASY</span></td>
+          <td>3 rows × 4 cols <span style="color:var(--text-dim);font-size:0.82rem">(12 balls)</span></td>
+          <td><span class="key">2.0 s</span></td>
+          <td><span class="key">1.6 s</span></td>
+        </tr>
+        <tr>
+          <td><span style="color:var(--red);font-family:'Rajdhani',sans-serif;font-weight:700">HARD</span></td>
+          <td>4 rows × 6 cols <span style="color:var(--text-dim);font-size:0.82rem">(24 balls)</span></td>
+          <td><span class="key">1.2 s</span></td>
+          <td><span class="key">0.8 s</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════
+     SCORING
+═══════════════════════════════ -->
+<section id="scoring">
+  <div class="container">
+    <p class="section-tag">§ 06</p>
+    <h2>HUD &amp; <span class="accent">Scoring</span></h2>
+    <p>
+      The HUD is always visible once the game starts. It is attached to the camera
+      so it follows your gaze and remains readable in VR mode.
+    </p>
+
+    <div class="card-grid" style="margin-bottom:24px">
+      <div class="card">
+        <span class="card-icon">❤️</span>
+        <div class="card-title">Lives (top-right)</div>
+        <p>You start with 3 lives. Each wrong-colour shot costs one life. Losing all 3 ends the game immediately.</p>
+      </div>
+      <div class="card">
+        <span class="card-icon">★</span>
+        <div class="card-title">Score (below lives)</div>
+        <p>Running total. Displayed in green. Score never drops below 0.</p>
+      </div>
+      <div class="card">
+        <span class="card-icon">🔄</span>
+        <div class="card-title">Round (top-left)</div>
+        <p>Shows current round out of 5, e.g. <code>Round: 2/5</code>.</p>
+      </div>
+      <div class="card">
+        <span class="card-icon">⏱</span>
+        <div class="card-title">Timer (below round)</div>
+        <p>2:00 countdown. Turns red in the final 15 seconds. Running out of time ends the game.</p>
+      </div>
+    </div>
+
+    <div class="score-box">
+      <div class="score-box-header">Point Values</div>
+      <div class="score-row">
+        <span class="label">Correct colour shot (match)</span>
+        <span class="value pos">+ 10</span>
+      </div>
+      <div class="score-row">
+        <span class="label">Wrong colour shot (mismatch)</span>
+        <span class="value neg">− 5 &nbsp;&amp;&nbsp; − 1 life</span>
+      </div>
+      <div class="score-row">
+        <span class="label">Minimum score</span>
+        <span class="value" style="color:var(--text-dim)">0 (cannot go negative)</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════
+     TIPS
+═══════════════════════════════ -->
+<section id="tips">
+  <div class="container">
+    <p class="section-tag">§ 07</p>
+    <h2>Tips &amp; <span class="accent">Tricks</span></h2>
+
+    <div class="tip">
+      <span class="tip-icon">🎯</span>
+      <div><strong>Memorise the target before scanning.</strong>
+      The target ball sits in the lower-centre of your view. Study its colour and the dot pattern before looking up at the grid.</div>
+    </div>
+    <div class="tip">
+      <span class="tip-icon">⚡</span>
+      <div><strong>Scan systematically.</strong>
+      Work row by row across the grid rather than jumping around. This prevents missing or double-shooting a ball.</div>
+    </div>
+    <div class="tip">
+      <span class="tip-icon">🔴</span>
+      <div><strong>When in doubt, skip it.</strong>
+      A wrong shot costs a life. With only 3 lives, a couple of mistakes can end an otherwise perfect run. If you are not sure about a colour, move on and return.</div>
+    </div>
+    <div class="tip">
+      <span class="tip-icon">🎵</span>
+      <div><strong>Music requires a user gesture.</strong>
+      Background music starts when you click <em>BEGIN</em>. If it does not start immediately, tap anywhere on the screen once — browsers require a touch or click before playing audio.</div>
+    </div>
+    <div class="tip">
+      <span class="tip-icon">📱</span>
+      <div><strong>Allow device orientation.</strong>
+      On iOS, the browser may ask permission to access the gyroscope. Tap <em>Allow</em> when prompted, or go to <em>Settings → Safari → Motion &amp; Orientation Access</em> and enable it.</div>
+    </div>
+    <div class="tip">
+      <span class="tip-icon">🥽</span>
+      <div><strong>Adjust your headset IPD.</strong>
+      If the stereoscopic image looks blurry or doubled, adjust the lens separation on your Cardboard viewer until the two images merge cleanly.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════
+     FOOTER
+═══════════════════════════════ -->
+<footer>
+  <p>GAZE PATTERN SHOOTER &nbsp;·&nbsp; CMPT 461 Immersive Computing &nbsp;·&nbsp; Built with <a href="https://aframe.io" target="_blank">A-Frame 1.5</a></p>
+  <p style="margin-top:8px;color:#2a3a4a">Matias Aldom &nbsp;·&nbsp; Trinity Western University &nbsp;·&nbsp; 2026</p>
+</footer>
+
+</body>
+</html>
