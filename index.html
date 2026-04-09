@@ -31,57 +31,303 @@ AFRAME.registerComponent("raycaster-auto-refresh", {
 
 // ============================================================
 // TEXTURE GENERATION via THREE.CanvasTexture
-// Bypasses a-assets entirely -- generates canvases and stores
-// THREE.Texture objects in a map, applied directly to meshes.
+// Each color gets a completely unique procedural pattern so
+// the objects are unmistakably distinct textured objects.
+//
+//  red    -> cracked lava (dark fissure lines over orange-red)
+//  blue   -> circuit board (L-traces + pads on dark blue)
+//  green  -> hexagonal honeycomb grid
+//  purple -> concentric glowing rings
+//  orange -> diagonal chevron / tiger stripes
+//  pink   -> scattered multi-size stars
 // ============================================================
 
-// This map is populated once and reused everywhere.
 const ballTextures = {};
 
-const colorDefs = {
-  red:    { base: "#cc2200", dot: "rgba(255,255,255,0.32)", r: 6,  sp: 22 },
-  blue:   { base: "#1144cc", dot: "rgba(255,255,255,0.32)", r: 5,  sp: 20 },
-  green:  { base: "#1a8c3a", dot: "rgba(255,255,255,0.30)", r: 6,  sp: 24 },
-  purple: { base: "#6622bb", dot: "rgba(255,255,255,0.30)", r: 5,  sp: 20 },
-  orange: { base: "#cc6600", dot: "rgba(255,255,255,0.32)", r: 7,  sp: 26 },
-  pink:   { base: "#cc2277", dot: "rgba(255,255,255,0.32)", r: 5,  sp: 19 }
-};
+// Seeded pseudo-random so textures are deterministic (same every load)
+function seededRand(seed) {
+  let s = seed;
+  return function() {
+    s = (s * 16807 + 0) % 2147483647;
+    return (s - 1) / 2147483646;
+  };
+}
 
-function buildCanvasTexture(def) {
-  const SIZE = 128;
+function buildCanvasTexture(name) {
+  const SIZE = 256;
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = SIZE;
   const ctx = canvas.getContext("2d");
 
-  // Solid base color
-  ctx.fillStyle = def.base;
-  ctx.fillRect(0, 0, SIZE, SIZE);
+  if (name === "red") {
+    // ── CRACKED LAVA ──────────────────────────────────────────
+    // Base: deep red-orange radial gradient
+    const bg = ctx.createRadialGradient(SIZE/2,SIZE/2,10, SIZE/2,SIZE/2,SIZE*0.7);
+    bg.addColorStop(0, "#ff4400");
+    bg.addColorStop(0.5, "#cc2200");
+    bg.addColorStop(1, "#550800");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, SIZE, SIZE);
 
-  // Radial highlight/vignette
-  const grad = ctx.createRadialGradient(SIZE*0.4, SIZE*0.35, SIZE*0.05, SIZE/2, SIZE/2, SIZE*0.72);
-  grad.addColorStop(0, "rgba(255,255,255,0.20)");
-  grad.addColorStop(1, "rgba(0,0,0,0.35)");
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, SIZE, SIZE);
+    // Lava glow patches
+    const rand = seededRand(42);
+    for (let i = 0; i < 6; i++) {
+      const gx = rand() * SIZE, gy = rand() * SIZE;
+      const gr = ctx.createRadialGradient(gx,gy,2, gx,gy,30+rand()*20);
+      gr.addColorStop(0, "rgba(255,180,0,0.55)");
+      gr.addColorStop(1, "rgba(255,60,0,0)");
+      ctx.fillStyle = gr;
+      ctx.fillRect(0,0,SIZE,SIZE);
+    }
 
-  // Dot-grid overlay
-  ctx.fillStyle = def.dot;
-  const sp = def.sp, off = sp / 2;
-  for (let y = off; y < SIZE; y += sp)
-    for (let x = off; x < SIZE; x += sp) {
+    // Crack lines -- dark jagged fissures
+    ctx.strokeStyle = "rgba(20,0,0,0.85)";
+    ctx.lineWidth = 2.5;
+    const cracks = [[30,10,80,60,60,120,110,180],[180,20,150,70,190,130,140,200],[60,200,120,150,170,210,220,240],[10,150,50,100,20,60,70,30]];
+    cracks.forEach(pts => {
       ctx.beginPath();
-      ctx.arc(x, y, def.r, 0, Math.PI * 2);
+      ctx.moveTo(pts[0], pts[1]);
+      for (let i = 2; i < pts.length; i += 2) {
+        ctx.lineTo(pts[i] + (seededRand(i)()-0.5)*10, pts[i+1] + (seededRand(i+1)()-0.5)*10);
+      }
+      ctx.stroke();
+    });
+    // Thin secondary cracks
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(0,0,0,0.5)";
+    for (let i = 0; i < 8; i++) {
+      const r = seededRand(i*17);
+      ctx.beginPath();
+      ctx.moveTo(r()*SIZE, r()*SIZE);
+      ctx.lineTo(r()*SIZE, r()*SIZE);
+      ctx.stroke();
+    }
+
+  } else if (name === "blue") {
+    // ── CIRCUIT BOARD ─────────────────────────────────────────
+    ctx.fillStyle = "#091a3a";
+    ctx.fillRect(0, 0, SIZE, SIZE);
+
+    // Subtle grid
+    ctx.strokeStyle = "rgba(0,80,160,0.3)";
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i < SIZE; i += 16) {
+      ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,SIZE); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(SIZE,i); ctx.stroke();
+    }
+
+    // Circuit traces (L-shaped paths)
+    ctx.strokeStyle = "#1a88ff";
+    ctx.lineWidth = 2;
+    ctx.lineJoin = "round";
+    const traces = [
+      [16,16, 16,80, 80,80],
+      [80,16, 144,16, 144,80, 208,80],
+      [208,16, 208,144],
+      [16,144, 80,144, 80,208, 144,208],
+      [208,144, 144,144, 144,208],
+      [16,208, 16,240]
+    ];
+    traces.forEach(pts => {
+      ctx.beginPath();
+      ctx.moveTo(pts[0], pts[1]);
+      for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i+1]);
+      ctx.stroke();
+    });
+
+    // Solder pads (circles at junctions)
+    ctx.fillStyle = "#55aaff";
+    [[16,16],[80,80],[144,16],[208,16],[208,80],[80,144],[144,144],[208,144],[80,208],[144,208],[16,144],[16,208]].forEach(([x,y]) => {
+      ctx.beginPath(); ctx.arc(x,y,5,0,Math.PI*2); ctx.fill();
+      // Outer ring
+      ctx.strokeStyle = "#88ccff"; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(x,y,8,0,Math.PI*2); ctx.stroke();
+    });
+
+    // IC chip rectangle
+    ctx.strokeStyle = "#2266cc";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(96, 96, 64, 64);
+    ctx.fillStyle = "#0a1f44";
+    ctx.fillRect(97, 97, 62, 62);
+    ctx.fillStyle = "#334466";
+    ctx.font = "bold 10px monospace";
+    ctx.fillText("IC01", 110, 134);
+
+  } else if (name === "green") {
+    // ── HEXAGONAL HONEYCOMB ────────────────────────────────────
+    ctx.fillStyle = "#082010";
+    ctx.fillRect(0, 0, SIZE, SIZE);
+
+    const HEX_R = 22;
+    const HEX_H = HEX_R * Math.sqrt(3);
+    ctx.strokeStyle = "#22cc55";
+    ctx.lineWidth = 1.8;
+
+    function hexPath(cx, cy, r) {
+      ctx.beginPath();
+      for (let a = 0; a < 6; a++) {
+        const angle = (Math.PI / 3) * a - Math.PI / 6;
+        const x = cx + r * Math.cos(angle);
+        const y = cy + r * Math.sin(angle);
+        a === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+    }
+
+    for (let row = -1; row < 7; row++) {
+      for (let col = -1; col < 7; col++) {
+        const cx = col * HEX_R * 1.5 + (row % 2 === 0 ? 0 : HEX_R * 0.75);
+        const cy = row * HEX_H * 0.5 + HEX_H * 0.5;
+        // Slight brightness variation
+        const bright = 0.3 + ((row * 3 + col * 7) % 5) * 0.1;
+        hexPath(cx + 2, cy + 2, HEX_R - 2);
+        ctx.fillStyle = `rgba(10,60,20,${bright})`;
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+
+    // Center glow
+    const cg = ctx.createRadialGradient(SIZE/2,SIZE/2,0,SIZE/2,SIZE/2,SIZE*0.45);
+    cg.addColorStop(0, "rgba(80,255,100,0.18)");
+    cg.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = cg;
+    ctx.fillRect(0,0,SIZE,SIZE);
+
+  } else if (name === "purple") {
+    // ── CONCENTRIC RINGS ──────────────────────────────────────
+    ctx.fillStyle = "#0d0020";
+    ctx.fillRect(0, 0, SIZE, SIZE);
+
+    // Glowing core
+    const core = ctx.createRadialGradient(SIZE/2,SIZE/2,0, SIZE/2,SIZE/2,30);
+    core.addColorStop(0, "rgba(220,120,255,0.9)");
+    core.addColorStop(1, "rgba(100,0,200,0)");
+    ctx.fillStyle = core;
+    ctx.fillRect(0,0,SIZE,SIZE);
+
+    // Concentric rings of varying thickness and opacity
+    const rings = [
+      {r:20, w:3, a:0.9}, {r:34, w:1.5, a:0.7}, {r:50, w:4, a:0.6},
+      {r:64, w:1, a:0.5}, {r:80, w:3, a:0.5}, {r:96, w:1.5, a:0.4},
+      {r:112, w:2, a:0.35}, {r:126, w:1, a:0.3}
+    ];
+    rings.forEach(({r, w, a}) => {
+      ctx.beginPath();
+      ctx.arc(SIZE/2, SIZE/2, r, 0, Math.PI*2);
+      ctx.strokeStyle = `rgba(180,80,255,${a})`;
+      ctx.lineWidth = w;
+      ctx.stroke();
+    });
+
+    // Radial spokes
+    ctx.strokeStyle = "rgba(140,40,220,0.25)";
+    ctx.lineWidth = 1;
+    for (let a = 0; a < 12; a++) {
+      const angle = (Math.PI * 2 / 12) * a;
+      ctx.beginPath();
+      ctx.moveTo(SIZE/2, SIZE/2);
+      ctx.lineTo(SIZE/2 + Math.cos(angle)*130, SIZE/2 + Math.sin(angle)*130);
+      ctx.stroke();
+    }
+
+    // Outer ambient glow
+    const outer = ctx.createRadialGradient(SIZE/2,SIZE/2,80, SIZE/2,SIZE/2,SIZE*0.7);
+    outer.addColorStop(0, "rgba(100,0,180,0.0)");
+    outer.addColorStop(1, "rgba(60,0,120,0.5)");
+    ctx.fillStyle = outer;
+    ctx.fillRect(0,0,SIZE,SIZE);
+
+  } else if (name === "orange") {
+    // ── DIAGONAL CHEVRON / TIGER STRIPES ─────────────────────
+    ctx.fillStyle = "#7a2e00";
+    ctx.fillRect(0, 0, SIZE, SIZE);
+
+    // Diagonal chevron stripes
+    const stripeW = 28;
+    ctx.save();
+    ctx.translate(SIZE/2, SIZE/2);
+    ctx.rotate(Math.PI / 4);
+    ctx.translate(-SIZE/2, -SIZE/2);
+
+    for (let i = -2; i < 12; i++) {
+      const x = i * stripeW * 2 - SIZE * 0.5;
+      ctx.fillStyle = i % 2 === 0 ? "#cc5500" : "#ff8800";
+      ctx.fillRect(x, -SIZE, stripeW, SIZE * 3);
+    }
+    ctx.restore();
+
+    // Dark edge vignette
+    const vig = ctx.createRadialGradient(SIZE/2,SIZE/2,SIZE*0.2, SIZE/2,SIZE/2,SIZE*0.85);
+    vig.addColorStop(0, "rgba(0,0,0,0)");
+    vig.addColorStop(1, "rgba(0,0,0,0.5)");
+    ctx.fillStyle = vig;
+    ctx.fillRect(0,0,SIZE,SIZE);
+
+    // Highlight center
+    const hi = ctx.createRadialGradient(SIZE*0.38,SIZE*0.32,2, SIZE/2,SIZE/2,SIZE*0.45);
+    hi.addColorStop(0, "rgba(255,220,100,0.35)");
+    hi.addColorStop(1, "rgba(255,100,0,0)");
+    ctx.fillStyle = hi;
+    ctx.fillRect(0,0,SIZE,SIZE);
+
+  } else if (name === "pink") {
+    // ── SCATTERED STARS ──────────────────────────────────────
+    ctx.fillStyle = "#3a0020";
+    ctx.fillRect(0, 0, SIZE, SIZE);
+
+    // Deep glow background
+    const bg = ctx.createRadialGradient(SIZE/2,SIZE/2,0, SIZE/2,SIZE/2,SIZE*0.6);
+    bg.addColorStop(0, "rgba(200,0,100,0.35)");
+    bg.addColorStop(1, "rgba(60,0,30,0)");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0,0,SIZE,SIZE);
+
+    // Draw a 5-pointed star
+    function star(cx, cy, r, color) {
+      ctx.beginPath();
+      for (let i = 0; i < 5; i++) {
+        const outerA = (Math.PI * 2 / 5) * i - Math.PI / 2;
+        const innerA = outerA + Math.PI / 5;
+        const ox = cx + r * Math.cos(outerA);
+        const oy = cy + r * Math.sin(outerA);
+        const ix = cx + (r * 0.42) * Math.cos(innerA);
+        const iy = cy + (r * 0.42) * Math.sin(innerA);
+        i === 0 ? ctx.moveTo(ox, oy) : ctx.lineTo(ox, oy);
+        ctx.lineTo(ix, iy);
+      }
+      ctx.closePath();
+      ctx.fillStyle = color;
       ctx.fill();
     }
+
+    const rand = seededRand(99);
+    // Large stars
+    [[60,60,28],[196,50,22],[128,128,32],[50,190,20],[200,185,18],[128,50,14]].forEach(([x,y,r]) => {
+      star(x, y, r, "rgba(255,100,200,0.9)");
+      star(x, y, r*0.6, "rgba(255,200,240,0.7)");
+    });
+    // Small stars scattered
+    for (let i = 0; i < 20; i++) {
+      star(rand()*SIZE, rand()*SIZE, 4+rand()*7, "rgba(255,140,210,0.65)");
+    }
+    // Tiny sparkle dots
+    ctx.fillStyle = "rgba(255,220,240,0.8)";
+    for (let i = 0; i < 30; i++) {
+      ctx.beginPath();
+      ctx.arc(rand()*SIZE, rand()*SIZE, 1+rand()*2, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
 
   return canvas;
 }
 
 // Build textures only after THREE is available (after a-frame loads)
 document.addEventListener("DOMContentLoaded", () => {
-  Object.entries(colorDefs).forEach(([name, def]) => {
-    const canvas = buildCanvasTexture(def);
-    // THREE is global after aframe.min.js loads
+  ["red","blue","green","purple","orange","pink"].forEach(name => {
+    const canvas = buildCanvasTexture(name);
     const tex = new THREE.CanvasTexture(canvas);
     tex.needsUpdate = true;
     ballTextures[name] = tex;
@@ -114,6 +360,16 @@ body { margin:0; }
 
 <body>
 
+<!-- Background music lives OUTSIDE a-scene so A-Frame cannot interfere with it -->
+<audio
+  id="bgMusicAudio"
+  src="https://cdn.freesound.org/previews/612/612886_5674468-lq.mp3"
+  loop
+  preload="auto"
+  crossorigin="anonymous"
+  style="display:none">
+</audio>
+
 <button id="enterVRBtn" onclick="AFRAME.scenes[0].enterVR()">⬡ ENTER VR</button>
 
 <a-scene background="color:#111" vr-mode-ui="enabled: true" raycaster-auto-refresh>
@@ -122,24 +378,13 @@ body { margin:0; }
        ASSETS
   ============================================================ -->
   <a-assets timeout="10000">
-    <!-- AUDIO (hit/miss use A-Frame sound; bgMusic uses plain HTML audio for autoplay unlock) -->
     <audio id="hitSound"  src="https://cdn.freesound.org/previews/341/341695_5858296-lq.mp3"  preload="auto" crossorigin="anonymous"></audio>
     <audio id="missSound" src="https://cdn.freesound.org/previews/142/142608_1840739-lq.mp3"  preload="auto" crossorigin="anonymous"></audio>
   </a-assets>
 
-  <!-- Hit / miss sfx via A-Frame (triggered after user gesture so AudioContext is unlocked) -->
+  <!-- Hit / miss sfx via A-Frame -->
   <a-entity id="hitSoundEntity"  sound="src: #hitSound;  loop: false; autoplay: false; volume: 1.0"></a-entity>
   <a-entity id="missSoundEntity" sound="src: #missSound; loop: false; autoplay: false; volume: 1.0"></a-entity>
-
-  <!-- Background music: plain HTML audio element, started on first click so autoplay policy is satisfied -->
-  <audio
-    id="bgMusicAudio"
-    src="https://cdn.freesound.org/previews/612/612886_5674468-lq.mp3"
-    loop
-    preload="auto"
-    crossorigin="anonymous"
-    style="display:none">
-  </audio>
 
 
   <!-- ============================================================
@@ -1049,27 +1294,27 @@ function endGame() {
 // AUDIO HELPERS
 //////////////////////////////
 
-const hitSoundEl  = document.querySelector("#hitSoundEntity");
-const missSoundEl = document.querySelector("#missSoundEntity");
+const hitSoundEl   = document.querySelector("#hitSoundEntity");
+const missSoundEl  = document.querySelector("#missSoundEntity");
 const bgMusicAudio = document.querySelector("#bgMusicAudio");
 
-// On first user interaction, unlock AudioContext and resume bgMusic if needed.
-// This satisfies browser autoplay policies.
-let _audioUnlocked = false;
+// Called on every user gesture -- safe to call multiple times.
+// Resumes any suspended AudioContext and starts music if the game is running.
 function unlockAudio() {
-  if (_audioUnlocked) return;
-  _audioUnlocked = true;
-  // Resume A-Frame's AudioContext if suspended
-  const ctx = AFRAME.scenes[0].audioListener && AFRAME.scenes[0].audioListener.context;
-  if (ctx && ctx.state === "suspended") ctx.resume();
-  // If music should be playing, start it now
-  if (settings.musicOn && gameActive) {
+  // Resume A-Frame's WebAudio context if the browser suspended it
+  const scene = AFRAME.scenes && AFRAME.scenes[0];
+  if (scene) {
+    const ctx = scene.audioListener && scene.audioListener.context;
+    if (ctx && ctx.state === "suspended") ctx.resume();
+  }
+  // Start music if it should be playing but isn't yet
+  if (settings.musicOn && gameActive && bgMusicAudio.paused) {
     bgMusicAudio.volume = 0.45;
     bgMusicAudio.play().catch(() => {});
   }
 }
-document.addEventListener("click",     unlockAudio, { once: true });
-document.addEventListener("touchstart", unlockAudio, { once: true });
+document.addEventListener("click",      unlockAudio);
+document.addEventListener("touchstart", unlockAudio);
 
 function playHit() {
   if (hitSoundEl.components && hitSoundEl.components.sound) {
@@ -1089,7 +1334,7 @@ function startMusic() {
   if (!settings.musicOn) return;
   bgMusicAudio.volume = 0.45;
   bgMusicAudio.play().catch(() => {
-    // Autoplay blocked -- will start on next user gesture via unlockAudio
+    // Autoplay blocked -- unlockAudio will retry on next user gesture
   });
 }
 
@@ -1104,8 +1349,8 @@ function stopMusic() {
 //////////////////////////////
 
 function applyTexture(sphere, pattern) {
-  const col = patternColor[pattern] || "#ffffff";
-  sphere.setAttribute("material", `color: ${col}; roughness: 0.75; metalness: 0.05`);
+  // color:#fff so the canvas texture renders with its true colors, not tinted
+  sphere.setAttribute("material", "color: #fff; roughness: 0.6; metalness: 0.1");
 
   function doApply() {
     const mesh = sphere.getObject3D("mesh");
