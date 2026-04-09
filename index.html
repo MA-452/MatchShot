@@ -176,6 +176,32 @@ body { margin:0; }
       render-order="999">
     </a-text>
 
+    <!-- ROUND DISPLAY -->
+    <a-text
+      id="roundText"
+      value="Round: 1/5"
+      position="-0.62 0.05 -1"
+      align="left"
+      color="#ffdd44"
+      width="1.4"
+      visible="false"
+      material="depthTest: false"
+      render-order="999">
+    </a-text>
+
+    <!-- TIMER DISPLAY -->
+    <a-text
+      id="timerText"
+      value="Time: 2:00"
+      position="-0.62 -0.08 -1"
+      align="left"
+      color="#ff8844"
+      width="1.4"
+      visible="false"
+      material="depthTest: false"
+      render-order="999">
+    </a-text>
+
   </a-entity>
 
 
@@ -513,10 +539,10 @@ body { margin:0; }
     visible="false">
   </a-text>
 
-  <!-- LEVEL 2 ANNOUNCEMENT -->
+  <!-- ROUND / LEVEL ANNOUNCEMENT -->
   <a-text
     id="levelAnnouncement"
-    value="LEVEL 2"
+    value="ROUND 1 - LEVEL 2"
     visible="false"
     position="0 1.9 -2"
     align="center"
@@ -557,18 +583,28 @@ body { margin:0; }
     <a-text
       id="gameOverLabel"
       value="GAME OVER"
-      position="0 0.32 -1.18"
+      position="0 0.38 -1.18"
       align="center"
       color="#ff2244"
       width="4"
       font="mozillavr">
     </a-text>
 
+    <!-- Rounds completed -->
+    <a-text
+      id="gameOverRounds"
+      value="Rounds: 0 / 5"
+      position="0 0.14 -1.18"
+      align="center"
+      color="#ffdd44"
+      width="2.4">
+    </a-text>
+
     <!-- Final score -->
     <a-text
       id="gameOver"
       value="Score: 0"
-      position="0 0.06 -1.18"
+      position="0 0.0 -1.18"
       align="center"
       color="#ffffff"
       width="2.4">
@@ -633,7 +669,7 @@ const settings = {
 // Difficulty configs
 const difficultyConfig = {
   easy: { rows: 3, cols: 4, fuseTimeout: 2000 },
-  hard: { rows: 4, cols: 5, fuseTimeout: 1200 }
+  hard: { rows: 4, cols: 6, fuseTimeout: 1200 }
 };
 
 
@@ -647,7 +683,9 @@ const gazeCursor       = document.querySelector("#gazeCursor");
 
 const lifeText         = document.querySelector("#lifeText");
 const scoreText        = document.querySelector("#scoreText");
-const gameOverText     = document.querySelector("#gameOver");       // score line inside panel
+const roundText        = document.querySelector("#roundText");
+const timerText        = document.querySelector("#timerText");
+const gameOverText     = document.querySelector("#gameOver");
 const gameOverPanel    = document.querySelector("#gameOverPanel");
 const targetBall       = document.querySelector("#targetBall");
 const targetLabel      = document.querySelector("#targetLabel");
@@ -749,6 +787,8 @@ function startGame() {
   // Show gameplay HUD
   lifeText.setAttribute("visible", "true");
   scoreText.setAttribute("visible", "true");
+  roundText.setAttribute("visible", "true");
+  timerText.setAttribute("visible", "true");
   targetBall.setAttribute("visible", "true");
   targetLabel.setAttribute("visible", "true");
 
@@ -848,6 +888,8 @@ document.querySelector("a-scene").addEventListener("loaded", () => {
   const playAgainBtnBg = document.querySelector("#playAgainBtnBg");
 
   function playAgain() {
+    stopTimer();
+
     // Hide game over panel
     gameOverPanel.setAttribute("visible", false);
 
@@ -860,8 +902,10 @@ document.querySelector("a-scene").addEventListener("loaded", () => {
     targetLabel.setAttribute("visible", false);
     lifeText.setAttribute("visible", false);
     scoreText.setAttribute("visible", false);
+    roundText.setAttribute("visible", false);
+    timerText.setAttribute("visible", false);
 
-    // Reset fuse timeout to default (will be re-applied by startGame)
+    // Reset fuse timeout to default
     gazeCursor.setAttribute("fuse-timeout", "2000");
 
     // Go back to setup menu
@@ -888,11 +932,13 @@ document.querySelector("a-scene").addEventListener("loaded", () => {
 // GAME STATE
 //////////////////////////////
 
+const TOTAL_ROUNDS   = 5;
+const GAME_TIME      = 120; // seconds
+
 // Level 1 uses 5 colors, Level 2 adds pink
 const patternsL1 = ["red", "blue", "green", "purple", "orange"];
 const patternsL2 = ["red", "blue", "green", "purple", "orange", "pink"];
 
-// Display colors for tinting (matches canvas base colors)
 const patternColor = {
   red:    "#cc2200",
   blue:   "#1144cc",
@@ -902,15 +948,21 @@ const patternColor = {
   pink:   "#cc2277"
 };
 
-let currentLevel = 1;
+let currentRound  = 1;  // 1-5
+let currentLevel  = 1;  // 1 or 2 within each round
 let activePatterns = patternsL1;
 
-let lives = 3;
-let score = 0;
-let gameActive = false;
+let lives         = 3;
+let score         = 0;
+let gameActive    = false;
+let roundsCompleted = 0;
 
-// Projectile travel duration (ms) -- faster in L2
-let projectileDur = 500;
+// Projectile travel duration (ms) -- fast, consistent across all levels
+const projectileDur = 150;
+
+// Timer
+let timeLeft      = GAME_TIME;
+let timerInterval = null;
 
 function updateLives() {
   lifeText.setAttribute("value", "Lives: " + lives);
@@ -920,16 +972,59 @@ function updateScore() {
   scoreText.setAttribute("value", "Score: " + score);
 }
 
+function updateRound() {
+  roundText.setAttribute("value", "Round: " + currentRound + "/" + TOTAL_ROUNDS);
+}
+
+function updateTimer() {
+  const mins = Math.floor(timeLeft / 60);
+  const secs = String(timeLeft % 60).padStart(2, "0");
+  timerText.setAttribute("color", timeLeft <= 15 ? "#ff2244" : "#ff8844");
+  timerText.setAttribute("value", "Time: " + mins + ":" + secs);
+}
+
+function startTimer() {
+  stopTimer();
+  timerInterval = setInterval(() => {
+    timeLeft--;
+    updateTimer();
+    if (timeLeft <= 0) {
+      stopTimer();
+      timeOut();
+    }
+  }, 1000);
+}
+
+function stopTimer() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+}
+
+function timeOut() {
+  gameActive = false;
+  showFinalScore("TIME'S UP!");
+}
+
 function showFinalScore(label) {
-  const panel = document.querySelector("#gameOverPanel");
-  const labelEl = document.querySelector("#gameOverLabel");
-  const scoreEl = document.querySelector("#gameOver");
+  stopTimer();
+  const panel      = document.querySelector("#gameOverPanel");
+  const labelEl    = document.querySelector("#gameOverLabel");
+  const roundsEl   = document.querySelector("#gameOverRounds");
+  const scoreEl    = document.querySelector("#gameOver");
+  const accentTop  = panel.querySelector("a-plane:nth-child(2)");
+  const accentBot  = panel.querySelector("a-plane:nth-child(3)");
 
+  const isWin = label === "YOU WIN!";
   labelEl.setAttribute("value", label);
-  labelEl.setAttribute("color", label === "YOU WIN!" ? "#44ff88" : "#ff2244");
-  scoreEl.setAttribute("value", "Score: " + score);
+  labelEl.setAttribute("color", isWin ? "#44ff88" : "#ff2244");
+  if (accentTop) accentTop.setAttribute("color", isWin ? "#44ff88" : "#ff2244");
+  if (accentBot) accentBot.setAttribute("color", isWin ? "#44ff88" : "#ff2244");
 
-  // Snap panel to camera position so it's always in view
+  roundsEl.setAttribute("value", "Rounds: " + roundsCompleted + " / " + TOTAL_ROUNDS);
+  scoreEl.setAttribute("value",  "Score: " + score);
+
   const cam = document.querySelector("#cameraRig");
   panel.setAttribute("position", cam.getAttribute("position"));
   panel.setAttribute("visible", true);
@@ -961,9 +1056,7 @@ function playMiss() {
 }
 
 function startMusic() {
-  if (settings.musicOn) {
-    bgMusicEl.components.sound.playSound();
-  }
+  if (settings.musicOn) bgMusicEl.components.sound.playSound();
 }
 
 function stopMusic() {
@@ -977,12 +1070,8 @@ function stopMusic() {
 
 function applyTexture(sphere, pattern) {
   const col = patternColor[pattern] || "#ffffff";
-
-  // Set base A-Frame material so roughness/metalness are right
-  // Use color only first; texture is applied once the mesh exists
   sphere.setAttribute("material", `color: ${col}; roughness: 0.75; metalness: 0.05`);
 
-  // Apply the THREE.CanvasTexture once the entity's mesh is ready
   function doApply() {
     const mesh = sphere.getObject3D("mesh");
     if (!mesh) return;
@@ -1000,13 +1089,10 @@ function applyTexture(sphere, pattern) {
     doApply();
   } else {
     sphere.addEventListener("object3dset", doApply, { once: true });
-    // Fallback in case event already fired
     setTimeout(doApply, 100);
   }
 }
 
-// Re-apply texture to a sphere that already exists in the scene
-// (used after wrong-hit greying, if we ever need to restore)
 function greyOutSphere(sphere) {
   sphere.setAttribute("material", "color: #333; roughness: 1.0");
   const mesh = sphere.getObject3D("mesh");
@@ -1028,18 +1114,28 @@ function greyOutSphere(sphere) {
 let targetPattern = "";
 
 function initGame() {
-  currentLevel = 1;
-  activePatterns = patternsL1;
-  projectileDur = 500;
+  currentRound    = 1;
+  currentLevel    = 1;
+  activePatterns  = patternsL1;
+  roundsCompleted = 0;
 
-  lives = 3;
-  score = 0;
+  lives  = 3;
+  score  = 0;
   gameActive = true;
+
+  timeLeft = GAME_TIME;
 
   updateLives();
   updateScore();
+  updateRound();
+  updateTimer();
+
+  // Show timer and round HUD
+  roundText.setAttribute("visible", true);
+  timerText.setAttribute("visible", true);
 
   startMusic();
+  startTimer();
   pickNewTarget();
   buildGrid();
 }
@@ -1051,42 +1147,81 @@ function initGame() {
 
 function pickNewTarget() {
   targetPattern = activePatterns[Math.floor(Math.random() * activePatterns.length)];
-  // Apply texture + tint to target ball
   applyTexture(targetBall, targetPattern);
 }
 
 
 //////////////////////////////
-// LEVEL TRANSITION
+// ROUND / LEVEL TRANSITION
 //////////////////////////////
 
-function triggerLevel2() {
+function showAnnouncement(text, color, callback) {
+  // Pause timer and shooting during announcement
   gameActive = false;
+  stopTimer();
 
   const ann = document.querySelector("#levelAnnouncement");
+  ann.setAttribute("value", text);
+  ann.setAttribute("color", color);
   ann.setAttribute("visible", true);
 
   setTimeout(() => {
     ann.setAttribute("visible", false);
-
-    currentLevel = 2;
-    activePatterns = patternsL2;
-    projectileDur = 300;
-
-    const currentFuse = parseInt(gazeCursor.getAttribute("fuse-timeout")) || 2000;
-    const newFuse = Math.max(400, currentFuse - 400);
-    gazeCursor.setAttribute("fuse-timeout", newFuse);
-
-    pickNewTarget();
-    buildGrid(2);
-
     gameActive = true;
+    startTimer();
+    if (callback) callback();
   }, 2000);
+}
+
+function triggerLevel2() {
+  // Reset fuse for level 2 within this round
+  const baseFuse  = difficultyConfig[settings.difficulty].fuseTimeout;
+  const newFuse   = Math.max(400, baseFuse - 400);
+
+  showAnnouncement(
+    "ROUND " + currentRound + "  -  WAVE 2",
+    "#ff44ff",
+    () => {
+      currentLevel   = 2;
+      activePatterns = patternsL2;
+      gazeCursor.setAttribute("fuse-timeout", newFuse);
+      pickNewTarget();
+      buildGrid();
+    }
+  );
+}
+
+function triggerNextRound() {
+  roundsCompleted++;
+
+  if (roundsCompleted >= TOTAL_ROUNDS) {
+    // All 5 rounds done -- player wins
+    gameActive = false;
+    stopMusic();
+    showFinalScore("YOU WIN!");
+    return;
+  }
+
+  currentRound++;
+
+  showAnnouncement(
+    "ROUND " + currentRound + "  START!",
+    "#ffdd44",
+    () => {
+      currentLevel   = 1;
+      activePatterns = patternsL1;
+      // Restore base fuse for this difficulty
+      gazeCursor.setAttribute("fuse-timeout", difficultyConfig[settings.difficulty].fuseTimeout);
+      updateRound();
+      pickNewTarget();
+      buildGrid();
+    }
+  );
 }
 
 
 //////////////////////////////
-// CHECK LEVEL CLEAR
+// CHECK LEVEL / ROUND CLEAR
 //////////////////////////////
 
 function checkLevelClear() {
@@ -1097,13 +1232,13 @@ function checkLevelClear() {
     if (b.dataset.pattern === targetPattern) matchCount++;
   });
 
-  if (matchCount === 0) {
-    if (currentLevel === 1) {
-      triggerLevel2();
-    } else {
-      gameActive = false;
-      showFinalScore("YOU WIN!");
-    }
+  if (matchCount > 0) return; // still balls to shoot
+
+  if (currentLevel === 1) {
+    triggerLevel2();
+  } else {
+    // Level 2 cleared -- round complete
+    triggerNextRound();
   }
 }
 
@@ -1112,10 +1247,10 @@ function checkLevelClear() {
 // CREATE GRID
 //////////////////////////////
 
-function buildGrid(extraCols = 0) {
-  const cfg = difficultyConfig[settings.difficulty];
-  const rows = cfg.rows;
-  const cols = cfg.cols + extraCols;
+function buildGrid() {
+  const cfg     = difficultyConfig[settings.difficulty];
+  const rows    = cfg.rows;
+  const cols    = cfg.cols;
   const spacing = 0.9;
 
   const grid = document.querySelector("#grid");
@@ -1123,8 +1258,7 @@ function buildGrid(extraCols = 0) {
 
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-
-      const sphere = document.createElement("a-sphere");
+      const sphere  = document.createElement("a-sphere");
       const pattern = activePatterns[Math.floor(Math.random() * activePatterns.length)];
 
       sphere.setAttribute("class", "grid-ball");
@@ -1134,31 +1268,24 @@ function buildGrid(extraCols = 0) {
         `${(c - cols/2 + 0.5) * spacing} ${2.2 + (rows/2 - r - 0.5) * spacing} -3.5`
       );
       sphere.dataset.pattern = pattern;
-
-      // Texture + tint instead of flat color
       applyTexture(sphere, pattern);
-
       addGazeShootLogic(sphere);
       grid.appendChild(sphere);
     }
   }
 
-  // Guarantee at least 3 balls match the target color
-  const allBalls = Array.from(document.querySelectorAll(".grid-ball"));
-  const matches  = allBalls.filter(b => b.dataset.pattern === targetPattern);
-  const needed   = 3 - matches.length;
+  // Guarantee at least 3 target-color balls
+  const allBalls   = Array.from(document.querySelectorAll(".grid-ball"));
+  const matches    = allBalls.filter(b => b.dataset.pattern === targetPattern);
+  const needed     = 3 - matches.length;
 
   if (needed > 0) {
-    // Pick `needed` non-matching balls at random and repaint them
     const nonMatches = allBalls.filter(b => b.dataset.pattern !== targetPattern);
     for (let i = 0; i < needed && i < nonMatches.length; i++) {
-      // Fisher-Yates partial shuffle to pick without replacement
       const idx = i + Math.floor(Math.random() * (nonMatches.length - i));
       const tmp = nonMatches[i]; nonMatches[i] = nonMatches[idx]; nonMatches[idx] = tmp;
-
-      const ball = nonMatches[i];
-      ball.dataset.pattern = targetPattern;
-      applyTexture(ball, targetPattern);
+      nonMatches[i].dataset.pattern = targetPattern;
+      applyTexture(nonMatches[i], targetPattern);
     }
   }
 
@@ -1175,11 +1302,9 @@ function addGazeShootLogic(ball) {
     if (!gameActive) return;
     ball.setAttribute("scale", "1.2 1.2 1.2");
   });
-
   ball.addEventListener("mouseleave", () => {
     ball.setAttribute("scale", "1 1 1");
   });
-
   ball.addEventListener("click", () => {
     if (!gameActive) return;
     shootBall(ball);
@@ -1201,18 +1326,15 @@ function shootBall(target) {
 //////////////////////////////
 
 function createProjectile(target) {
-  // Guard: don't fire at already-removed targets
   if (!target.parentNode) return;
 
   const projectile = document.createElement("a-sphere");
   projectile.setAttribute("radius", "0.08");
   projectile.setAttribute("color", "white");
   projectile.setAttribute("position", "0 0.55 -0.5");
-
   document.querySelector("a-scene").appendChild(projectile);
 
   const targetPos = target.object3D.position;
-
   projectile.setAttribute("animation", {
     property: "position",
     to: `${targetPos.x} ${targetPos.y} ${targetPos.z}`,
@@ -1226,12 +1348,9 @@ function createProjectile(target) {
     if (resolved) return;
     resolved = true;
     clearInterval(collisionInterval);
-
-    // Stop the animation
     projectile.removeAttribute("animation");
 
     if (!target.parentNode) {
-      // Target already gone (edge case) -- just clean up projectile
       if (projectile.parentNode) projectile.parentNode.removeChild(projectile);
       return;
     }
@@ -1255,30 +1374,21 @@ function createProjectile(target) {
     if (projectile.parentNode) projectile.parentNode.removeChild(projectile);
   }
 
-  // Distance-based collision check every 50ms
   const projVec   = new THREE.Vector3();
   const targetVec = new THREE.Vector3();
 
   const collisionInterval = setInterval(() => {
-    // Abort if either entity was removed
     if (!projectile.parentNode || !target.parentNode) {
       clearInterval(collisionInterval);
       if (projectile.parentNode) projectile.parentNode.removeChild(projectile);
       return;
     }
-
     projectile.object3D.getWorldPosition(projVec);
     target.object3D.getWorldPosition(targetVec);
-
-    if (projVec.distanceTo(targetVec) < 0.35) {
-      resolveHit();
-    }
+    if (projVec.distanceTo(targetVec) < 0.35) resolveHit();
   }, 50);
 
-  // Safety fallback: resolve at end of animation duration anyway
-  setTimeout(() => {
-    if (!resolved) resolveHit();
-  }, projectileDur + 100);
+  setTimeout(() => { if (!resolved) resolveHit(); }, projectileDur + 100);
 }
 
 </script>
