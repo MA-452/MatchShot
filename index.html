@@ -8,6 +8,28 @@
 
 <script>
 // ============================================================
+// RAYCASTER AUTO-REFRESH COMPONENT
+// A-Frame caches raycaster object lists -- this component
+// re-queries every 200ms so dynamically added .grid-ball
+// spheres are always included.
+// ============================================================
+AFRAME.registerComponent("raycaster-auto-refresh", {
+  schema: { interval: { default: 200 } },
+  init() {
+    this._elapsed = 0;
+  },
+  tick(t, dt) {
+    this._elapsed += dt;
+    if (this._elapsed < this.data.interval) return;
+    this._elapsed = 0;
+    const cursor = document.querySelector("#gazeCursor");
+    if (cursor && cursor.components && cursor.components.raycaster) {
+      cursor.components.raycaster.refreshObjects();
+    }
+  }
+});
+
+// ============================================================
 // TEXTURE GENERATION via THREE.CanvasTexture
 // Bypasses a-assets entirely -- generates canvases and stores
 // THREE.Texture objects in a map, applied directly to meshes.
@@ -94,7 +116,7 @@ body { margin:0; }
 
 <button id="enterVRBtn" onclick="AFRAME.scenes[0].enterVR()">⬡ ENTER VR</button>
 
-<a-scene background="color:#111" vr-mode-ui="enabled: true">
+<a-scene background="color:#111" vr-mode-ui="enabled: true" raycaster-auto-refresh>
 
   <!-- ============================================================
        ASSETS
@@ -125,7 +147,7 @@ body { margin:0; }
       fuse-timeout="2000"
       geometry="primitive:ring; radiusInner:0.01; radiusOuter:0.015"
       material="color:white; shader:flat"
-      raycaster="objects: [data-gaze], .grid-ball">
+      raycaster="objects: .grid-ball, [data-gaze]; far: 20; interval: 50">
     </a-cursor>
 
     <!-- LIFE DISPLAY (hidden until game starts) -->
@@ -1109,7 +1131,7 @@ function buildGrid(extraCols = 0) {
       sphere.setAttribute("radius", "0.25");
       sphere.setAttribute(
         "position",
-        `${(c - cols/2 + 0.5) * spacing} ${1.6 + (rows/2 - r - 0.5) * spacing} -4`
+        `${(c - cols/2 + 0.5) * spacing} ${2.2 + (rows/2 - r - 0.5) * spacing} -3.5`
       );
       sphere.dataset.pattern = pattern;
 
@@ -1118,6 +1140,25 @@ function buildGrid(extraCols = 0) {
 
       addGazeShootLogic(sphere);
       grid.appendChild(sphere);
+    }
+  }
+
+  // Guarantee at least 3 balls match the target color
+  const allBalls = Array.from(document.querySelectorAll(".grid-ball"));
+  const matches  = allBalls.filter(b => b.dataset.pattern === targetPattern);
+  const needed   = 3 - matches.length;
+
+  if (needed > 0) {
+    // Pick `needed` non-matching balls at random and repaint them
+    const nonMatches = allBalls.filter(b => b.dataset.pattern !== targetPattern);
+    for (let i = 0; i < needed && i < nonMatches.length; i++) {
+      // Fisher-Yates partial shuffle to pick without replacement
+      const idx = i + Math.floor(Math.random() * (nonMatches.length - i));
+      const tmp = nonMatches[i]; nonMatches[i] = nonMatches[idx]; nonMatches[idx] = tmp;
+
+      const ball = nonMatches[i];
+      ball.dataset.pattern = targetPattern;
+      applyTexture(ball, targetPattern);
     }
   }
 
