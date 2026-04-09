@@ -122,18 +122,24 @@ body { margin:0; }
        ASSETS
   ============================================================ -->
   <a-assets timeout="10000">
-    <!-- AUDIO -->
-    <audio id="bgMusic"  src="https://cdn.freesound.org/previews/612/612886_5674468-lq.mp3"  preload="auto" crossorigin="anonymous"></audio>
-    <audio id="hitSound" src="https://cdn.freesound.org/previews/341/341695_5858296-lq.mp3"  preload="auto" crossorigin="anonymous"></audio>
-    <audio id="missSound"src="https://cdn.freesound.org/previews/142/142608_1840739-lq.mp3"  preload="auto" crossorigin="anonymous"></audio>
-
-    <!-- TEXTURES: generated at runtime via THREE.CanvasTexture (no img assets needed) -->
+    <!-- AUDIO (hit/miss use A-Frame sound; bgMusic uses plain HTML audio for autoplay unlock) -->
+    <audio id="hitSound"  src="https://cdn.freesound.org/previews/341/341695_5858296-lq.mp3"  preload="auto" crossorigin="anonymous"></audio>
+    <audio id="missSound" src="https://cdn.freesound.org/previews/142/142608_1840739-lq.mp3"  preload="auto" crossorigin="anonymous"></audio>
   </a-assets>
 
-  <!-- Invisible sound entities anchored in the scene -->
-  <a-entity id="bgMusicEntity"  sound="src: #bgMusic;  loop: true; autoplay: false; volume: 0.5"></a-entity>
-  <a-entity id="hitSoundEntity" sound="src: #hitSound; loop: false; autoplay: false; volume: 1.0"></a-entity>
-  <a-entity id="missSoundEntity"sound="src: #missSound;loop: false; autoplay: false; volume: 1.0"></a-entity>
+  <!-- Hit / miss sfx via A-Frame (triggered after user gesture so AudioContext is unlocked) -->
+  <a-entity id="hitSoundEntity"  sound="src: #hitSound;  loop: false; autoplay: false; volume: 1.0"></a-entity>
+  <a-entity id="missSoundEntity" sound="src: #missSound; loop: false; autoplay: false; volume: 1.0"></a-entity>
+
+  <!-- Background music: plain HTML audio element, started on first click so autoplay policy is satisfied -->
+  <audio
+    id="bgMusicAudio"
+    src="https://cdn.freesound.org/previews/612/612886_5674468-lq.mp3"
+    loop
+    preload="auto"
+    crossorigin="anonymous"
+    style="display:none">
+  </audio>
 
 
   <!-- ============================================================
@@ -272,7 +278,7 @@ body { margin:0; }
 
     <!-- Student name -->
     <a-text
-      value="Your Name"
+      value="Matias Aldom"
       position="0 -0.02 -1.18"
       align="center"
       color="#ffffff"
@@ -778,6 +784,8 @@ function startGame() {
   if (currentPhase !== "setup") return;
   currentPhase = "game";
 
+  unlockAudio(); // BEGIN button click = user gesture, unlock audio now
+
   setupMenu.setAttribute("visible", "false");
 
   // Apply chosen fuse-timeout
@@ -1041,26 +1049,53 @@ function endGame() {
 // AUDIO HELPERS
 //////////////////////////////
 
-const bgMusicEl   = document.querySelector("#bgMusicEntity");
 const hitSoundEl  = document.querySelector("#hitSoundEntity");
 const missSoundEl = document.querySelector("#missSoundEntity");
+const bgMusicAudio = document.querySelector("#bgMusicAudio");
+
+// On first user interaction, unlock AudioContext and resume bgMusic if needed.
+// This satisfies browser autoplay policies.
+let _audioUnlocked = false;
+function unlockAudio() {
+  if (_audioUnlocked) return;
+  _audioUnlocked = true;
+  // Resume A-Frame's AudioContext if suspended
+  const ctx = AFRAME.scenes[0].audioListener && AFRAME.scenes[0].audioListener.context;
+  if (ctx && ctx.state === "suspended") ctx.resume();
+  // If music should be playing, start it now
+  if (settings.musicOn && gameActive) {
+    bgMusicAudio.volume = 0.45;
+    bgMusicAudio.play().catch(() => {});
+  }
+}
+document.addEventListener("click",     unlockAudio, { once: true });
+document.addEventListener("touchstart", unlockAudio, { once: true });
 
 function playHit() {
-  hitSoundEl.components.sound.stopSound();
-  hitSoundEl.components.sound.playSound();
+  if (hitSoundEl.components && hitSoundEl.components.sound) {
+    hitSoundEl.components.sound.stopSound();
+    hitSoundEl.components.sound.playSound();
+  }
 }
 
 function playMiss() {
-  missSoundEl.components.sound.stopSound();
-  missSoundEl.components.sound.playSound();
+  if (missSoundEl.components && missSoundEl.components.sound) {
+    missSoundEl.components.sound.stopSound();
+    missSoundEl.components.sound.playSound();
+  }
 }
 
 function startMusic() {
-  if (settings.musicOn) bgMusicEl.components.sound.playSound();
+  if (!settings.musicOn) return;
+  bgMusicAudio.volume = 0.45;
+  bgMusicAudio.play().catch(() => {
+    // Autoplay blocked -- will start on next user gesture via unlockAudio
+  });
 }
 
 function stopMusic() {
-  bgMusicEl.components.sound.stopSound();
+  bgMusicAudio.pause();
+  bgMusicAudio.currentTime = 0;
 }
 
 
@@ -1225,7 +1260,8 @@ function triggerNextRound() {
 //////////////////////////////
 
 function checkLevelClear() {
-  const remaining = document.querySelectorAll(".grid-ball");
+  // Only count direct children of #grid -- not hitbox child spheres
+  const remaining = document.querySelectorAll("#grid > a-sphere.grid-ball");
 
   let matchCount = 0;
   remaining.forEach(b => {
@@ -1269,13 +1305,24 @@ function buildGrid() {
       );
       sphere.dataset.pattern = pattern;
       applyTexture(sphere, pattern);
+
+      // Invisible hitbox child -- 2x radius so gaze lands anywhere near the ball
+      const hitbox = document.createElement("a-sphere");
+      hitbox.setAttribute("radius", "0.42");
+      hitbox.setAttribute("material", "visible: false; opacity: 0; transparent: true");
+      hitbox.setAttribute("class", "grid-ball");
+      hitbox.dataset.pattern = pattern;
+      sphere.appendChild(hitbox);
+      // Sync hitbox pattern when parent pattern changes
+      sphere._hitbox = hitbox;
+
       addGazeShootLogic(sphere);
       grid.appendChild(sphere);
     }
   }
 
   // Guarantee at least 3 target-color balls
-  const allBalls   = Array.from(document.querySelectorAll(".grid-ball"));
+  const allBalls   = Array.from(document.querySelectorAll("#grid > a-sphere.grid-ball"));
   const matches    = allBalls.filter(b => b.dataset.pattern === targetPattern);
   const needed     = 3 - matches.length;
 
@@ -1285,6 +1332,7 @@ function buildGrid() {
       const idx = i + Math.floor(Math.random() * (nonMatches.length - i));
       const tmp = nonMatches[i]; nonMatches[i] = nonMatches[idx]; nonMatches[idx] = tmp;
       nonMatches[i].dataset.pattern = targetPattern;
+      if (nonMatches[i]._hitbox) nonMatches[i]._hitbox.dataset.pattern = targetPattern;
       applyTexture(nonMatches[i], targetPattern);
     }
   }
@@ -1298,16 +1346,28 @@ function buildGrid() {
 //////////////////////////////
 
 function addGazeShootLogic(ball) {
+  // Helper: get root ball (in case event fires on hitbox child)
+  function getRoot(el) {
+    // If el has a parentElement that is also .grid-ball, el is the hitbox child
+    return (el.parentElement && el.parentElement.classList.contains("grid-ball"))
+      ? el.parentElement
+      : el;
+  }
+
   ball.addEventListener("mouseenter", () => {
     if (!gameActive) return;
-    ball.setAttribute("scale", "1.2 1.2 1.2");
+    const root = getRoot(ball);
+    root.setAttribute("scale", "1.2 1.2 1.2");
   });
   ball.addEventListener("mouseleave", () => {
-    ball.setAttribute("scale", "1 1 1");
+    const root = getRoot(ball);
+    root.setAttribute("scale", "1 1 1");
   });
   ball.addEventListener("click", () => {
     if (!gameActive) return;
-    shootBall(ball);
+    unlockAudio(); // ensure audio unlocked on first interaction
+    const root = getRoot(ball);
+    shootBall(root);
   });
 }
 
@@ -1330,11 +1390,32 @@ function createProjectile(target) {
 
   const projectile = document.createElement("a-sphere");
   projectile.setAttribute("radius", "0.08");
-  projectile.setAttribute("color", "white");
-  projectile.setAttribute("position", "0 0.55 -0.5");
+  projectile.setAttribute("material", "color: #ffffff; emissive: #88ddff; emissiveIntensity: 0.8; roughness: 0.2; metalness: 0.4");
+
+  // Spawn at camera world position so projectile always starts from POV
+  const cam = document.querySelector("#cameraRig");
+  const camPos = new THREE.Vector3();
+  cam.object3D.getWorldPosition(camPos);
+  projectile.setAttribute("position", `${camPos.x} ${camPos.y} ${camPos.z}`);
   document.querySelector("a-scene").appendChild(projectile);
 
-  const targetPos = target.object3D.position;
+  // Apply a bright energy texture to the projectile
+  projectile.addEventListener("object3dset", () => {
+    const mesh = projectile.getObject3D("mesh");
+    if (!mesh) return;
+    const tex = ballTextures["blue"] || null;
+    if (!tex) return;
+    mesh.traverse(node => {
+      if (node.isMesh && node.material) {
+        node.material.map = tex;
+        node.material.emissive = new THREE.Color(0x44aaff);
+        node.material.emissiveIntensity = 0.6;
+        node.material.needsUpdate = true;
+      }
+    });
+  }, { once: true });
+
+  const targetPos = target.object3D.getWorldPosition(new THREE.Vector3());
   projectile.setAttribute("animation", {
     property: "position",
     to: `${targetPos.x} ${targetPos.y} ${targetPos.z}`,
