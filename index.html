@@ -360,31 +360,13 @@ body { margin:0; }
 
 <body>
 
-<!-- Background music lives OUTSIDE a-scene so A-Frame cannot interfere with it -->
-<audio
-  id="bgMusicAudio"
-  src="https://cdn.freesound.org/previews/612/612886_5674468-lq.mp3"
-  loop
-  preload="auto"
-  crossorigin="anonymous"
-  style="display:none">
-</audio>
+<!-- No external audio files -- all sound synthesized via Web Audio API -->
 
 <button id="enterVRBtn" onclick="AFRAME.scenes[0].enterVR()">⬡ ENTER VR</button>
 
 <a-scene background="color:#111" vr-mode-ui="enabled: true" raycaster-auto-refresh>
 
-  <!-- ============================================================
-       ASSETS
-  ============================================================ -->
-  <a-assets timeout="10000">
-    <audio id="hitSound"  src="https://cdn.freesound.org/previews/341/341695_5858296-lq.mp3"  preload="auto" crossorigin="anonymous"></audio>
-    <audio id="missSound" src="https://cdn.freesound.org/previews/142/142608_1840739-lq.mp3"  preload="auto" crossorigin="anonymous"></audio>
-  </a-assets>
-
-  <!-- Hit / miss sfx via A-Frame -->
-  <a-entity id="hitSoundEntity"  sound="src: #hitSound;  loop: false; autoplay: false; volume: 1.0"></a-entity>
-  <a-entity id="missSoundEntity" sound="src: #missSound; loop: false; autoplay: false; volume: 1.0"></a-entity>
+  <!-- All audio is synthesized via Web Audio API -- no asset files needed -->
 
 
   <!-- ============================================================
@@ -1291,56 +1273,163 @@ function endGame() {
 
 
 //////////////////////////////
-// AUDIO HELPERS
+// AUDIO ENGINE (Web Audio API)
+// No external files -- everything synthesized in JS.
+// Works offline, no CORS, no CDN dependency.
 //////////////////////////////
 
-const hitSoundEl   = document.querySelector("#hitSoundEntity");
-const missSoundEl  = document.querySelector("#missSoundEntity");
-const bgMusicAudio = document.querySelector("#bgMusicAudio");
+let _audioCtx = null;
+let _musicPlaying = false;
+let _musicNodes = [];   // refs to stop music cleanly
 
-// Called on every user gesture -- safe to call multiple times.
-// Resumes any suspended AudioContext and starts music if the game is running.
-function unlockAudio() {
-  // Resume A-Frame's WebAudio context if the browser suspended it
-  const scene = AFRAME.scenes && AFRAME.scenes[0];
-  if (scene) {
-    const ctx = scene.audioListener && scene.audioListener.context;
-    if (ctx && ctx.state === "suspended") ctx.resume();
+// Get or create the shared AudioContext (must be after a user gesture)
+function getAudioCtx() {
+  if (!_audioCtx) {
+    _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   }
-  // Start music if it should be playing but isn't yet
-  if (settings.musicOn && gameActive && bgMusicAudio.paused) {
-    bgMusicAudio.volume = 0.45;
-    bgMusicAudio.play().catch(() => {});
+  if (_audioCtx.state === "suspended") _audioCtx.resume();
+  return _audioCtx;
+}
+
+// Called on every click/touch so the AudioContext is always unlocked
+function unlockAudio() {
+  getAudioCtx();
+  if (settings.musicOn && gameActive && !_musicPlaying) {
+    startMusic();
   }
 }
 document.addEventListener("click",      unlockAudio);
 document.addEventListener("touchstart", unlockAudio);
 
+// ── HIT SOUND ─────────────────────────────────────────────────
+// Bright ascending "ping" -- two sine tones, quick attack, fast decay
 function playHit() {
-  if (hitSoundEl.components && hitSoundEl.components.sound) {
-    hitSoundEl.components.sound.stopSound();
-    hitSoundEl.components.sound.playSound();
-  }
+  const ctx = getAudioCtx();
+  const now = ctx.currentTime;
+  [[660, 0.0, 0.18, 0.55], [880, 0.02, 0.12, 0.3]].forEach(([freq, delay, dur, vol]) => {
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(freq, now + delay);
+    osc.frequency.exponentialRampToValueAtTime(freq * 1.5, now + delay + dur);
+    gain.gain.setValueAtTime(vol, now + delay);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + delay + dur);
+    osc.start(now + delay);
+    osc.stop(now + delay + dur + 0.01);
+  });
 }
 
+// ── MISS SOUND ────────────────────────────────────────────────
+// Low descending buzz -- sawtooth + noise-like filter sweep
 function playMiss() {
-  if (missSoundEl.components && missSoundEl.components.sound) {
-    missSoundEl.components.sound.stopSound();
-    missSoundEl.components.sound.playSound();
-  }
+  const ctx = getAudioCtx();
+  const now = ctx.currentTime;
+
+  // Descending sawtooth growl
+  const osc  = ctx.createOscillator();
+  const gain = ctx.createGain();
+  const filt = ctx.createBiquadFilter();
+  osc.connect(filt); filt.connect(gain); gain.connect(ctx.destination);
+  osc.type = "sawtooth";
+  osc.frequency.setValueAtTime(280, now);
+  osc.frequency.exponentialRampToValueAtTime(80, now + 0.25);
+  filt.type = "lowpass";
+  filt.frequency.setValueAtTime(900, now);
+  filt.frequency.exponentialRampToValueAtTime(200, now + 0.25);
+  gain.gain.setValueAtTime(0.5, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+  osc.start(now); osc.stop(now + 0.3);
+
+  // Short low thud
+  const osc2  = ctx.createOscillator();
+  const gain2 = ctx.createGain();
+  osc2.connect(gain2); gain2.connect(ctx.destination);
+  osc2.type = "sine";
+  osc2.frequency.setValueAtTime(120, now);
+  osc2.frequency.exponentialRampToValueAtTime(40, now + 0.15);
+  gain2.gain.setValueAtTime(0.6, now);
+  gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+  osc2.start(now); osc2.stop(now + 0.2);
+}
+
+// ── BACKGROUND MUSIC ──────────────────────────────────────────
+// Ambient pulsing synth loop:
+//   - A slow chord pad (sine waves on a minor chord)
+//   - A walking bass pulse
+//   - A gentle high arpeggio
+// Uses setInterval to sequence notes so it loops indefinitely.
+
+let _musicInterval = null;
+const MUSIC_BPM   = 90;
+const BEAT_MS     = (60 / MUSIC_BPM) * 1000;  // ms per beat
+
+// Chord sequence (root notes in Hz, minor feel)
+const CHORD_ROOTS = [110, 98, 117, 131]; // A2, G2, Bb2, C3
+let _chordIdx = 0;
+
+function _playMusicBeat() {
+  if (!_musicPlaying) return;
+  const ctx = getAudioCtx();
+  const now = ctx.currentTime;
+  const root = CHORD_ROOTS[_chordIdx % CHORD_ROOTS.length];
+  _chordIdx++;
+
+  const beatSec = BEAT_MS / 1000;
+
+  // Pad chord -- root, minor third, fifth (soft sine)
+  [1, 1.189, 1.498].forEach((ratio, i) => {
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = "sine";
+    osc.frequency.value = root * ratio * 2; // up an octave
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.08, now + 0.12);
+    gain.gain.setValueAtTime(0.08, now + beatSec * 1.6);
+    gain.gain.linearRampToValueAtTime(0, now + beatSec * 2.0);
+    osc.start(now); osc.stop(now + beatSec * 2.1);
+  });
+
+  // Bass pulse -- root, one beat long
+  const bass  = ctx.createOscillator();
+  const bassG = ctx.createGain();
+  const bassF = ctx.createBiquadFilter();
+  bass.connect(bassF); bassF.connect(bassG); bassG.connect(ctx.destination);
+  bass.type = "triangle";
+  bass.frequency.value = root;
+  bassF.type = "lowpass"; bassF.frequency.value = 300;
+  bassG.gain.setValueAtTime(0.18, now);
+  bassG.gain.exponentialRampToValueAtTime(0.001, now + beatSec * 0.9);
+  bass.start(now); bass.stop(now + beatSec);
+
+  // High arpeggio -- alternates between root*4 and fifth*4
+  const arpFreq = (_chordIdx % 2 === 0) ? root * 4 : root * 4 * 1.498;
+  const arp  = ctx.createOscillator();
+  const arpG = ctx.createGain();
+  arp.connect(arpG); arpG.connect(ctx.destination);
+  arp.type = "sine";
+  arp.frequency.value = arpFreq;
+  arpG.gain.setValueAtTime(0.04, now);
+  arpG.gain.exponentialRampToValueAtTime(0.001, now + beatSec * 0.4);
+  arp.start(now); arp.stop(now + beatSec * 0.45);
 }
 
 function startMusic() {
   if (!settings.musicOn) return;
-  bgMusicAudio.volume = 0.45;
-  bgMusicAudio.play().catch(() => {
-    // Autoplay blocked -- unlockAudio will retry on next user gesture
-  });
+  if (_musicPlaying) return;
+  _musicPlaying = true;
+  _chordIdx = 0;
+  _playMusicBeat(); // play immediately
+  _musicInterval = setInterval(_playMusicBeat, BEAT_MS);
 }
 
 function stopMusic() {
-  bgMusicAudio.pause();
-  bgMusicAudio.currentTime = 0;
+  _musicPlaying = false;
+  if (_musicInterval) {
+    clearInterval(_musicInterval);
+    _musicInterval = null;
+  }
 }
 
 
