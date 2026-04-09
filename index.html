@@ -6,132 +6,1122 @@
 
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 
+<script>
+// ============================================================
+// TEXTURE GENERATION via THREE.CanvasTexture
+// Bypasses a-assets entirely -- generates canvases and stores
+// THREE.Texture objects in a map, applied directly to meshes.
+// ============================================================
+
+// This map is populated once and reused everywhere.
+const ballTextures = {};
+
+const colorDefs = {
+  red:    { base: "#cc2200", dot: "rgba(255,255,255,0.32)", r: 6,  sp: 22 },
+  blue:   { base: "#1144cc", dot: "rgba(255,255,255,0.32)", r: 5,  sp: 20 },
+  green:  { base: "#1a8c3a", dot: "rgba(255,255,255,0.30)", r: 6,  sp: 24 },
+  purple: { base: "#6622bb", dot: "rgba(255,255,255,0.30)", r: 5,  sp: 20 },
+  orange: { base: "#cc6600", dot: "rgba(255,255,255,0.32)", r: 7,  sp: 26 },
+  pink:   { base: "#cc2277", dot: "rgba(255,255,255,0.32)", r: 5,  sp: 19 }
+};
+
+function buildCanvasTexture(def) {
+  const SIZE = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = SIZE;
+  const ctx = canvas.getContext("2d");
+
+  // Solid base color
+  ctx.fillStyle = def.base;
+  ctx.fillRect(0, 0, SIZE, SIZE);
+
+  // Radial highlight/vignette
+  const grad = ctx.createRadialGradient(SIZE*0.4, SIZE*0.35, SIZE*0.05, SIZE/2, SIZE/2, SIZE*0.72);
+  grad.addColorStop(0, "rgba(255,255,255,0.20)");
+  grad.addColorStop(1, "rgba(0,0,0,0.35)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, SIZE, SIZE);
+
+  // Dot-grid overlay
+  ctx.fillStyle = def.dot;
+  const sp = def.sp, off = sp / 2;
+  for (let y = off; y < SIZE; y += sp)
+    for (let x = off; x < SIZE; x += sp) {
+      ctx.beginPath();
+      ctx.arc(x, y, def.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+  return canvas;
+}
+
+// Build textures only after THREE is available (after a-frame loads)
+document.addEventListener("DOMContentLoaded", () => {
+  Object.entries(colorDefs).forEach(([name, def]) => {
+    const canvas = buildCanvasTexture(def);
+    // THREE is global after aframe.min.js loads
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.needsUpdate = true;
+    ballTextures[name] = tex;
+  });
+});
+</script>
+
 <style>
 body { margin:0; }
+#enterVRBtn {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 999;
+  padding: 10px 28px;
+  background: rgba(0,20,40,0.85);
+  color: #00e5ff;
+  border: 1px solid #00e5ff;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 14px;
+  letter-spacing: 2px;
+  cursor: pointer;
+  user-select: none;
+}
+#enterVRBtn:hover { background: rgba(0,60,80,0.95); }
 </style>
 </head>
 
 <body>
 
-<a-scene background="color:#111">
+<button id="enterVRBtn" onclick="AFRAME.scenes[0].enterVR()">⬡ ENTER VR</button>
 
-  <!-- CAMERA + GAZE -->
-  <a-entity camera look-controls position="0 1.6 0">
+<a-scene background="color:#111" vr-mode-ui="enabled: true">
+
+  <!-- ============================================================
+       ASSETS
+  ============================================================ -->
+  <a-assets timeout="10000">
+    <!-- AUDIO -->
+    <audio id="bgMusic"  src="https://cdn.freesound.org/previews/612/612886_5674468-lq.mp3"  preload="auto" crossorigin="anonymous"></audio>
+    <audio id="hitSound" src="https://cdn.freesound.org/previews/341/341695_5858296-lq.mp3"  preload="auto" crossorigin="anonymous"></audio>
+    <audio id="missSound"src="https://cdn.freesound.org/previews/142/142608_1840739-lq.mp3"  preload="auto" crossorigin="anonymous"></audio>
+
+    <!-- TEXTURES: generated at runtime via THREE.CanvasTexture (no img assets needed) -->
+  </a-assets>
+
+  <!-- Invisible sound entities anchored in the scene -->
+  <a-entity id="bgMusicEntity"  sound="src: #bgMusic;  loop: true; autoplay: false; volume: 0.5"></a-entity>
+  <a-entity id="hitSoundEntity" sound="src: #hitSound; loop: false; autoplay: false; volume: 1.0"></a-entity>
+  <a-entity id="missSoundEntity"sound="src: #missSound;loop: false; autoplay: false; volume: 1.0"></a-entity>
+
+
+  <!-- ============================================================
+       CAMERA + GAZE
+  ============================================================ -->
+  <a-entity id="cameraRig" camera look-controls="magicWindowTrackingEnabled: true" position="0 1.6 0">
 
     <a-cursor
+      id="gazeCursor"
       fuse="true"
       fuse-timeout="2000"
       geometry="primitive:ring; radiusInner:0.01; radiusOuter:0.015"
-      color="white">
+      material="color:white; shader:flat"
+      raycaster="objects: [data-gaze], .grid-ball">
     </a-cursor>
 
-    <!-- LIFE DISPLAY -->
+    <!-- LIFE DISPLAY (hidden until game starts) -->
     <a-text
       id="lifeText"
       value="Lives: 3"
-      position="0 -0.4 -1"
-      align="center"
+      position="0.62 0.05 -1"
+      align="right"
       color="white"
-      width="2">
+      width="1.4"
+      visible="false"
+      material="depthTest: false"
+      render-order="999">
+    </a-text>
+
+    <!-- SCORE DISPLAY (hidden until game starts) -->
+    <a-text
+      id="scoreText"
+      value="Score: 0"
+      position="0.62 -0.08 -1"
+      align="right"
+      color="#aaffaa"
+      width="1.4"
+      visible="false"
+      material="depthTest: false"
+      render-order="999">
     </a-text>
 
   </a-entity>
 
-  <!-- LIGHTS -->
+
+  <!-- ============================================================
+       LIGHTS
+  ============================================================ -->
   <a-light type="ambient" intensity="0.6"></a-light>
   <a-light type="directional" position="1 3 2" intensity="1"></a-light>
 
+
+  <!-- ============================================================
+       FLASHSCREEN OVERLAY
+       Attached to camera so it always fills view
+  ============================================================ -->
+  <a-entity id="flashscreen" position="0 1.6 0">
+
+    <!-- Dark backing plane -->
+    <a-plane
+      position="0 0 -1.2"
+      width="3" height="2"
+      color="#050510"
+      opacity="0.97"
+      material="shader:flat">
+    </a-plane>
+
+    <!-- Decorative top accent bar -->
+    <a-plane
+      position="0 0.82 -1.19"
+      width="3" height="0.03"
+      color="#00e5ff"
+      material="shader:flat">
+    </a-plane>
+
+    <!-- Decorative bottom accent bar -->
+    <a-plane
+      position="0 -0.82 -1.19"
+      width="3" height="0.03"
+      color="#00e5ff"
+      material="shader:flat">
+    </a-plane>
+
+    <!-- Game title -->
+    <a-text
+      value="GAZE PATTERN SHOOTER"
+      position="0 0.42 -1.18"
+      align="center"
+      color="#00e5ff"
+      width="3.4"
+      font="mozillavr">
+    </a-text>
+
+    <!-- Subtitle line -->
+    <a-text
+      value="A WebVR Color Matching Experience"
+      position="0 0.2 -1.18"
+      align="center"
+      color="#88ccdd"
+      width="2.2">
+    </a-text>
+
+    <!-- Divider -->
+    <a-plane
+      position="0 0.1 -1.19"
+      width="1.4" height="0.005"
+      color="#334455"
+      material="shader:flat">
+    </a-plane>
+
+    <!-- Student name -->
+    <a-text
+      value="Your Name"
+      position="0 -0.02 -1.18"
+      align="center"
+      color="#ffffff"
+      width="2.2">
+    </a-text>
+
+    <!-- Course -->
+    <a-text
+      value="CMPT 461"
+      position="0 -0.18 -1.18"
+      align="center"
+      color="#aabbcc"
+      width="2.2">
+    </a-text>
+
+    <!-- START button background -->
+    <a-plane
+      id="startBtnBg"
+      position="0 -0.52 -1.18"
+      width="0.72" height="0.2"
+      color="#003344"
+      material="shader:flat"
+      data-gaze="true">
+    </a-plane>
+
+    <!-- START button label -->
+    <a-text
+      id="startBtn"
+      value="[ GAZE TO START ]"
+      position="0 -0.52 -1.17"
+      align="center"
+      color="#00e5ff"
+      width="2.2"
+      data-gaze="true">
+    </a-text>
+
+    <!-- Fuse-progress hint -->
+    <a-text
+      value="Hold gaze for 2 seconds"
+      position="0 -0.68 -1.18"
+      align="center"
+      color="#445566"
+      width="1.8">
+    </a-text>
+
+  </a-entity>
+
+
+  <!-- ============================================================
+       SETUP MENU  (hidden until flashscreen dismissed)
+  ============================================================ -->
+  <a-entity id="setupMenu" position="0 1.6 0" visible="false">
+
+    <!-- Backing plane -->
+    <a-plane
+      position="0 0 -1.2"
+      width="3" height="2.1"
+      color="#050510"
+      opacity="0.97"
+      material="shader:flat">
+    </a-plane>
+
+    <!-- Top accent -->
+    <a-plane
+      position="0 0.88 -1.19"
+      width="3" height="0.03"
+      color="#ffaa00"
+      material="shader:flat">
+    </a-plane>
+
+    <!-- Bottom accent -->
+    <a-plane
+      position="0 -0.88 -1.19"
+      width="3" height="0.03"
+      color="#ffaa00"
+      material="shader:flat">
+    </a-plane>
+
+    <!-- Menu title -->
+    <a-text
+      value="GAME SETUP"
+      position="0 0.6 -1.18"
+      align="center"
+      color="#ffaa00"
+      width="3"
+      font="mozillavr">
+    </a-text>
+
+    <!-- Difficulty label -->
+    <a-text
+      value="DIFFICULTY"
+      position="0 0.3 -1.18"
+      align="center"
+      color="#aabbcc"
+      width="2">
+    </a-text>
+
+    <!-- Easy button bg -->
+    <a-plane
+      id="easyBtnBg"
+      position="-0.55 0.1 -1.18"
+      width="0.7" height="0.22"
+      color="#003300"
+      material="shader:flat"
+      data-gaze="true">
+    </a-plane>
+
+    <!-- Easy button text -->
+    <a-text
+      id="easyBtn"
+      value="EASY"
+      position="-0.55 0.1 -1.17"
+      align="center"
+      color="#44ff88"
+      width="1.8"
+      data-gaze="true">
+    </a-text>
+
+    <!-- Hard button bg -->
+    <a-plane
+      id="hardBtnBg"
+      position="0.55 0.1 -1.18"
+      width="0.7" height="0.22"
+      color="#330000"
+      material="shader:flat"
+      data-gaze="true">
+    </a-plane>
+
+    <!-- Hard button text -->
+    <a-text
+      id="hardBtn"
+      value="HARD"
+      position="0.55 0.1 -1.17"
+      align="center"
+      color="#ff4444"
+      width="1.8"
+      data-gaze="true">
+    </a-text>
+
+    <!-- Difficulty selection indicator -->
+    <a-text
+      id="difficultyIndicator"
+      value="Selected: EASY"
+      position="0 -0.08 -1.18"
+      align="center"
+      color="#ffffff"
+      width="2">
+    </a-text>
+
+    <!-- Divider -->
+    <a-plane
+      position="0 -0.2 -1.19"
+      width="2" height="0.005"
+      color="#334455"
+      material="shader:flat">
+    </a-plane>
+
+    <!-- Music label -->
+    <a-text
+      value="MUSIC"
+      position="0 -0.33 -1.18"
+      align="center"
+      color="#aabbcc"
+      width="2">
+    </a-text>
+
+    <!-- Music On button bg -->
+    <a-plane
+      id="musicOnBtnBg"
+      position="-0.55 -0.53 -1.18"
+      width="0.7" height="0.22"
+      color="#002233"
+      material="shader:flat"
+      data-gaze="true">
+    </a-plane>
+
+    <!-- Music On button text -->
+    <a-text
+      id="musicOnBtn"
+      value="ON"
+      position="-0.55 -0.53 -1.17"
+      align="center"
+      color="#00e5ff"
+      width="1.8"
+      data-gaze="true">
+    </a-text>
+
+    <!-- Music Off button bg -->
+    <a-plane
+      id="musicOffBtnBg"
+      position="0.55 -0.53 -1.18"
+      width="0.7" height="0.22"
+      color="#222222"
+      material="shader:flat"
+      data-gaze="true">
+    </a-plane>
+
+    <!-- Music Off button text -->
+    <a-text
+      id="musicOffBtn"
+      value="OFF"
+      position="0.55 -0.53 -1.17"
+      align="center"
+      color="#888888"
+      width="1.8"
+      data-gaze="true">
+    </a-text>
+
+    <!-- Music selection indicator -->
+    <a-text
+      id="musicIndicator"
+      value="Selected: ON"
+      position="0 -0.7 -1.18"
+      align="center"
+      color="#ffffff"
+      width="2">
+    </a-text>
+
+    <!-- BEGIN button bg -->
+    <a-plane
+      id="beginBtnBg"
+      position="0 -0.88 -1.18"
+      width="1.1" height="0.24"
+      color="#442200"
+      material="shader:flat"
+      data-gaze="true">
+    </a-plane>
+
+    <!-- BEGIN button text -->
+    <a-text
+      id="beginBtn"
+      value="[ BEGIN ]"
+      position="0 -0.88 -1.17"
+      align="center"
+      color="#ffaa00"
+      width="2.6"
+      data-gaze="true">
+    </a-text>
+
+  </a-entity>
+
+
+  <!-- ============================================================
+       GAMEPLAY ELEMENTS (hidden until game begins)
+  ============================================================ -->
+
   <!-- TARGET BALL -->
   <a-sphere
-      id="targetBall"
-      position="0 1.6 -1.5"
-      radius="0.25"
-      color="yellow">
+    id="targetBall"
+    position="0 0.55 -1.5"
+    radius="0.25"
+    color="yellow"
+    visible="false">
   </a-sphere>
 
-  <!-- GAME OVER TEXT -->
+  <!-- Target label -->
   <a-text
-    id="gameOver"
-    value="GAME OVER"
-    visible="false"
-    position="0 2 -2"
+    id="targetLabel"
+    value="TARGET"
+    position="0 0.9 -1.5"
     align="center"
-    color="red"
-    width="6">
+    color="#ffffff"
+    width="1.5"
+    visible="false">
   </a-text>
 
+  <!-- LEVEL 2 ANNOUNCEMENT -->
+  <a-text
+    id="levelAnnouncement"
+    value="LEVEL 2"
+    visible="false"
+    position="0 1.9 -2"
+    align="center"
+    color="#ff44ff"
+    width="8"
+    font="mozillavr">
+  </a-text>
+
+  <!-- GAME OVER OVERLAY (hidden until end) -->
+  <a-entity id="gameOverPanel" position="0 1.6 0" visible="false">
+
+    <!-- Backing plane -->
+    <a-plane
+      position="0 0 -1.2"
+      width="3" height="1.8"
+      color="#0a0010"
+      opacity="0.97"
+      material="shader:flat">
+    </a-plane>
+
+    <!-- Top accent -->
+    <a-plane
+      position="0 0.72 -1.19"
+      width="3" height="0.03"
+      color="#ff2244"
+      material="shader:flat">
+    </a-plane>
+
+    <!-- Bottom accent -->
+    <a-plane
+      position="0 -0.72 -1.19"
+      width="3" height="0.03"
+      color="#ff2244"
+      material="shader:flat">
+    </a-plane>
+
+    <!-- Result label (GAME OVER / YOU WIN!) -->
+    <a-text
+      id="gameOverLabel"
+      value="GAME OVER"
+      position="0 0.32 -1.18"
+      align="center"
+      color="#ff2244"
+      width="4"
+      font="mozillavr">
+    </a-text>
+
+    <!-- Final score -->
+    <a-text
+      id="gameOver"
+      value="Score: 0"
+      position="0 0.06 -1.18"
+      align="center"
+      color="#ffffff"
+      width="2.4">
+    </a-text>
+
+    <!-- Play Again button bg -->
+    <a-plane
+      id="playAgainBtnBg"
+      position="0 -0.34 -1.18"
+      width="1.1" height="0.24"
+      color="#220033"
+      material="shader:flat"
+      data-gaze="true">
+    </a-plane>
+
+    <!-- Play Again button text -->
+    <a-text
+      id="playAgainBtn"
+      value="[ PLAY AGAIN ]"
+      position="0 -0.34 -1.17"
+      align="center"
+      color="#ff44ff"
+      width="2.6"
+      data-gaze="true">
+    </a-text>
+
+    <!-- Gaze hint -->
+    <a-text
+      value="Hold gaze for 2 seconds"
+      position="0 -0.52 -1.18"
+      align="center"
+      color="#445566"
+      width="1.8">
+    </a-text>
+
+  </a-entity>
+
+  <!-- GRID container -->
   <a-entity id="grid"></a-entity>
 
 </a-scene>
 
 
+<!-- ============================================================
+     SCRIPT
+============================================================ -->
 <script>
+
+//////////////////////////////
+// PHASE MANAGEMENT
+// Phases: "flash" → "setup" → "game"
+//////////////////////////////
+
+let currentPhase = "flash";
+
+// Settings chosen in setup menu
+const settings = {
+  difficulty: "easy",   // "easy" | "hard"
+  musicOn: true
+};
+
+// Difficulty configs
+const difficultyConfig = {
+  easy: { rows: 3, cols: 4, fuseTimeout: 2000 },
+  hard: { rows: 4, cols: 5, fuseTimeout: 1200 }
+};
+
+
+//////////////////////////////
+// ELEMENT REFS
+//////////////////////////////
+
+const flashscreen      = document.querySelector("#flashscreen");
+const setupMenu        = document.querySelector("#setupMenu");
+const gazeCursor       = document.querySelector("#gazeCursor");
+
+const lifeText         = document.querySelector("#lifeText");
+const scoreText        = document.querySelector("#scoreText");
+const gameOverText     = document.querySelector("#gameOver");       // score line inside panel
+const gameOverPanel    = document.querySelector("#gameOverPanel");
+const targetBall       = document.querySelector("#targetBall");
+const targetLabel      = document.querySelector("#targetLabel");
+
+const diffIndicator    = document.querySelector("#difficultyIndicator");
+const musicIndicator   = document.querySelector("#musicIndicator");
+
+
+//////////////////////////////
+// HELPERS
+//////////////////////////////
+
+// Make an element pulse (scale) on hover to signal it is interactive
+function addHoverPulse(el) {
+  el.addEventListener("mouseenter", () => {
+    el.setAttribute("scale", "1.08 1.08 1.08");
+  });
+  el.addEventListener("mouseleave", () => {
+    el.setAttribute("scale", "1 1 1");
+  });
+}
+
+// Highlight the selected difficulty button
+function refreshDifficultyUI() {
+  const easyBg = document.querySelector("#easyBtnBg");
+  const hardBg = document.querySelector("#hardBtnBg");
+  const easyTxt = document.querySelector("#easyBtn");
+  const hardTxt = document.querySelector("#hardBtn");
+
+  if (settings.difficulty === "easy") {
+    easyBg.setAttribute("color", "#005500");
+    easyTxt.setAttribute("color", "#88ffaa");
+    hardBg.setAttribute("color", "#330000");
+    hardTxt.setAttribute("color", "#ff4444");
+    diffIndicator.setAttribute("value", "Selected: EASY");
+  } else {
+    easyBg.setAttribute("color", "#003300");
+    easyTxt.setAttribute("color", "#44ff88");
+    hardBg.setAttribute("color", "#660000");
+    hardTxt.setAttribute("color", "#ffaaaa");
+    diffIndicator.setAttribute("value", "Selected: HARD");
+  }
+}
+
+// Highlight the selected music button
+function refreshMusicUI() {
+  const onBg  = document.querySelector("#musicOnBtnBg");
+  const offBg = document.querySelector("#musicOffBtnBg");
+  const onTxt  = document.querySelector("#musicOnBtn");
+  const offTxt = document.querySelector("#musicOffBtn");
+
+  if (settings.musicOn) {
+    onBg.setAttribute("color",  "#003344");
+    onTxt.setAttribute("color", "#00e5ff");
+    offBg.setAttribute("color", "#222222");
+    offTxt.setAttribute("color","#555555");
+    musicIndicator.setAttribute("value", "Selected: ON");
+  } else {
+    onBg.setAttribute("color",  "#001122");
+    onTxt.setAttribute("color", "#335566");
+    offBg.setAttribute("color", "#444444");
+    offTxt.setAttribute("color","#dddddd");
+    musicIndicator.setAttribute("value", "Selected: OFF");
+  }
+}
+
+
+//////////////////////////////
+// PHASE: FLASH → SETUP
+//////////////////////////////
+
+function dismissFlashscreen() {
+  if (currentPhase !== "flash") return;
+  currentPhase = "setup";
+
+  flashscreen.setAttribute("visible", "false");
+  setupMenu.setAttribute("visible", "true");
+
+  // Initialize UI state
+  refreshDifficultyUI();
+  refreshMusicUI();
+}
+
+
+//////////////////////////////
+// PHASE: SETUP → GAME
+//////////////////////////////
+
+function startGame() {
+  if (currentPhase !== "setup") return;
+  currentPhase = "game";
+
+  setupMenu.setAttribute("visible", "false");
+
+  // Apply chosen fuse-timeout
+  const cfg = difficultyConfig[settings.difficulty];
+  gazeCursor.setAttribute("fuse-timeout", cfg.fuseTimeout);
+
+  // Show gameplay HUD
+  lifeText.setAttribute("visible", "true");
+  scoreText.setAttribute("visible", "true");
+  targetBall.setAttribute("visible", "true");
+  targetLabel.setAttribute("visible", "true");
+
+  initGame();
+}
+
+
+//////////////////////////////
+// FLASH SCREEN BUTTON
+//////////////////////////////
+
+// The start button sits inside the flashscreen entity which is camera-attached,
+// so we attach events after the scene loads.
+document.querySelector("a-scene").addEventListener("loaded", () => {
+
+  const startBtn   = document.querySelector("#startBtn");
+  const startBtnBg = document.querySelector("#startBtnBg");
+
+  addHoverPulse(startBtnBg);
+
+  startBtn.addEventListener("click", dismissFlashscreen);
+  startBtnBg.addEventListener("click", dismissFlashscreen);
+  startBtn.addEventListener("mouseenter", () => {
+    startBtn.setAttribute("color", "#ffffff");
+  });
+  startBtn.addEventListener("mouseleave", () => {
+    startBtn.setAttribute("color", "#00e5ff");
+  });
+
+
+  // ---- Setup menu buttons ----
+
+  const easyBtn    = document.querySelector("#easyBtn");
+  const easyBtnBg  = document.querySelector("#easyBtnBg");
+  const hardBtn    = document.querySelector("#hardBtn");
+  const hardBtnBg  = document.querySelector("#hardBtnBg");
+  const musicOnBtn    = document.querySelector("#musicOnBtn");
+  const musicOnBtnBg  = document.querySelector("#musicOnBtnBg");
+  const musicOffBtn   = document.querySelector("#musicOffBtn");
+  const musicOffBtnBg = document.querySelector("#musicOffBtnBg");
+  const beginBtn   = document.querySelector("#beginBtn");
+  const beginBtnBg = document.querySelector("#beginBtnBg");
+
+  // Difficulty
+  function selectEasy() {
+    if (currentPhase !== "setup") return;
+    settings.difficulty = "easy";
+    refreshDifficultyUI();
+  }
+  function selectHard() {
+    if (currentPhase !== "setup") return;
+    settings.difficulty = "hard";
+    refreshDifficultyUI();
+  }
+
+  easyBtn.addEventListener("click",   selectEasy);
+  easyBtnBg.addEventListener("click", selectEasy);
+  hardBtn.addEventListener("click",   selectHard);
+  hardBtnBg.addEventListener("click", selectHard);
+
+  addHoverPulse(easyBtnBg);
+  addHoverPulse(hardBtnBg);
+
+  // Music
+  function selectMusicOn() {
+    if (currentPhase !== "setup") return;
+    settings.musicOn = true;
+    refreshMusicUI();
+  }
+  function selectMusicOff() {
+    if (currentPhase !== "setup") return;
+    settings.musicOn = false;
+    refreshMusicUI();
+  }
+
+  musicOnBtn.addEventListener("click",    selectMusicOn);
+  musicOnBtnBg.addEventListener("click",  selectMusicOn);
+  musicOffBtn.addEventListener("click",   selectMusicOff);
+  musicOffBtnBg.addEventListener("click", selectMusicOff);
+
+  addHoverPulse(musicOnBtnBg);
+  addHoverPulse(musicOffBtnBg);
+
+  // Begin
+  beginBtn.addEventListener("click",   startGame);
+  beginBtnBg.addEventListener("click", startGame);
+  addHoverPulse(beginBtnBg);
+  beginBtn.addEventListener("mouseenter", () => {
+    beginBtn.setAttribute("color", "#ffffff");
+  });
+  beginBtn.addEventListener("mouseleave", () => {
+    beginBtn.setAttribute("color", "#ffaa00");
+  });
+
+  // ---- Play Again button ----
+  const playAgainBtn   = document.querySelector("#playAgainBtn");
+  const playAgainBtnBg = document.querySelector("#playAgainBtnBg");
+
+  function playAgain() {
+    // Hide game over panel
+    gameOverPanel.setAttribute("visible", false);
+
+    // Clear the grid
+    const grid = document.querySelector("#grid");
+    while (grid.firstChild) grid.removeChild(grid.firstChild);
+
+    // Hide gameplay elements
+    targetBall.setAttribute("visible", false);
+    targetLabel.setAttribute("visible", false);
+    lifeText.setAttribute("visible", false);
+    scoreText.setAttribute("visible", false);
+
+    // Reset fuse timeout to default (will be re-applied by startGame)
+    gazeCursor.setAttribute("fuse-timeout", "2000");
+
+    // Go back to setup menu
+    currentPhase = "setup";
+    setupMenu.setAttribute("visible", true);
+    refreshDifficultyUI();
+    refreshMusicUI();
+  }
+
+  playAgainBtn.addEventListener("click",   playAgain);
+  playAgainBtnBg.addEventListener("click", playAgain);
+  addHoverPulse(playAgainBtnBg);
+  playAgainBtn.addEventListener("mouseenter", () => {
+    playAgainBtn.setAttribute("color", "#ffffff");
+  });
+  playAgainBtn.addEventListener("mouseleave", () => {
+    playAgainBtn.setAttribute("color", "#ff44ff");
+  });
+
+});
+
 
 //////////////////////////////
 // GAME STATE
 //////////////////////////////
 
-const patterns = ["red","blue","green","purple","orange"];
+// Level 1 uses 5 colors, Level 2 adds pink
+const patternsL1 = ["red", "blue", "green", "purple", "orange"];
+const patternsL2 = ["red", "blue", "green", "purple", "orange", "pink"];
+
+// Display colors for tinting (matches canvas base colors)
+const patternColor = {
+  red:    "#cc2200",
+  blue:   "#1144cc",
+  green:  "#1a8c3a",
+  purple: "#6622bb",
+  orange: "#cc6600",
+  pink:   "#cc2277"
+};
+
+let currentLevel = 1;
+let activePatterns = patternsL1;
 
 let lives = 3;
-let gameActive = true;
+let score = 0;
+let gameActive = false;
 
-const lifeText = document.querySelector("#lifeText");
-const gameOverText = document.querySelector("#gameOver");
+// Projectile travel duration (ms) -- faster in L2
+let projectileDur = 500;
 
-function updateLives(){
-  lifeText.setAttribute("value","Lives: " + lives);
+function updateLives() {
+  lifeText.setAttribute("value", "Lives: " + lives);
 }
 
-function endGame(){
+function updateScore() {
+  scoreText.setAttribute("value", "Score: " + score);
+}
+
+function showFinalScore(label) {
+  const panel = document.querySelector("#gameOverPanel");
+  const labelEl = document.querySelector("#gameOverLabel");
+  const scoreEl = document.querySelector("#gameOver");
+
+  labelEl.setAttribute("value", label);
+  labelEl.setAttribute("color", label === "YOU WIN!" ? "#44ff88" : "#ff2244");
+  scoreEl.setAttribute("value", "Score: " + score);
+
+  // Snap panel to camera position so it's always in view
+  const cam = document.querySelector("#cameraRig");
+  panel.setAttribute("position", cam.getAttribute("position"));
+  panel.setAttribute("visible", true);
+}
+
+function endGame() {
   gameActive = false;
-  gameOverText.setAttribute("visible", true);
+  stopMusic();
+  showFinalScore("GAME OVER");
 }
 
 
 //////////////////////////////
-// TARGET PATTERN
+// AUDIO HELPERS
 //////////////////////////////
 
-let targetPattern =
-  patterns[Math.floor(Math.random()*patterns.length)];
+const bgMusicEl   = document.querySelector("#bgMusicEntity");
+const hitSoundEl  = document.querySelector("#hitSoundEntity");
+const missSoundEl = document.querySelector("#missSoundEntity");
 
-document.querySelector("#targetBall")
-  .setAttribute("color", targetPattern);
+function playHit() {
+  hitSoundEl.components.sound.stopSound();
+  hitSoundEl.components.sound.playSound();
+}
+
+function playMiss() {
+  missSoundEl.components.sound.stopSound();
+  missSoundEl.components.sound.playSound();
+}
+
+function startMusic() {
+  if (settings.musicOn) {
+    bgMusicEl.components.sound.playSound();
+  }
+}
+
+function stopMusic() {
+  bgMusicEl.components.sound.stopSound();
+}
+
+
+//////////////////////////////
+// TEXTURE HELPER
+//////////////////////////////
+
+function applyTexture(sphere, pattern) {
+  const col = patternColor[pattern] || "#ffffff";
+
+  // Set base A-Frame material so roughness/metalness are right
+  // Use color only first; texture is applied once the mesh exists
+  sphere.setAttribute("material", `color: ${col}; roughness: 0.75; metalness: 0.05`);
+
+  // Apply the THREE.CanvasTexture once the entity's mesh is ready
+  function doApply() {
+    const mesh = sphere.getObject3D("mesh");
+    if (!mesh) return;
+    const tex = ballTextures[pattern];
+    if (!tex) return;
+    mesh.traverse(node => {
+      if (node.isMesh && node.material) {
+        node.material.map = tex;
+        node.material.needsUpdate = true;
+      }
+    });
+  }
+
+  if (sphere.object3D && sphere.getObject3D("mesh")) {
+    doApply();
+  } else {
+    sphere.addEventListener("object3dset", doApply, { once: true });
+    // Fallback in case event already fired
+    setTimeout(doApply, 100);
+  }
+}
+
+// Re-apply texture to a sphere that already exists in the scene
+// (used after wrong-hit greying, if we ever need to restore)
+function greyOutSphere(sphere) {
+  sphere.setAttribute("material", "color: #333; roughness: 1.0");
+  const mesh = sphere.getObject3D("mesh");
+  if (mesh) {
+    mesh.traverse(node => {
+      if (node.isMesh && node.material) {
+        node.material.map = null;
+        node.material.needsUpdate = true;
+      }
+    });
+  }
+}
+
+
+//////////////////////////////
+// INIT GAME
+//////////////////////////////
+
+let targetPattern = "";
+
+function initGame() {
+  currentLevel = 1;
+  activePatterns = patternsL1;
+  projectileDur = 500;
+
+  lives = 3;
+  score = 0;
+  gameActive = true;
+
+  updateLives();
+  updateScore();
+
+  startMusic();
+  pickNewTarget();
+  buildGrid();
+}
+
+
+//////////////////////////////
+// TARGET COLOR
+//////////////////////////////
+
+function pickNewTarget() {
+  targetPattern = activePatterns[Math.floor(Math.random() * activePatterns.length)];
+  // Apply texture + tint to target ball
+  applyTexture(targetBall, targetPattern);
+}
+
+
+//////////////////////////////
+// LEVEL TRANSITION
+//////////////////////////////
+
+function triggerLevel2() {
+  gameActive = false;
+
+  const ann = document.querySelector("#levelAnnouncement");
+  ann.setAttribute("visible", true);
+
+  setTimeout(() => {
+    ann.setAttribute("visible", false);
+
+    currentLevel = 2;
+    activePatterns = patternsL2;
+    projectileDur = 300;
+
+    const currentFuse = parseInt(gazeCursor.getAttribute("fuse-timeout")) || 2000;
+    const newFuse = Math.max(400, currentFuse - 400);
+    gazeCursor.setAttribute("fuse-timeout", newFuse);
+
+    pickNewTarget();
+    buildGrid(2);
+
+    gameActive = true;
+  }, 2000);
+}
+
+
+//////////////////////////////
+// CHECK LEVEL CLEAR
+//////////////////////////////
+
+function checkLevelClear() {
+  const remaining = document.querySelectorAll(".grid-ball");
+
+  let matchCount = 0;
+  remaining.forEach(b => {
+    if (b.dataset.pattern === targetPattern) matchCount++;
+  });
+
+  if (matchCount === 0) {
+    if (currentLevel === 1) {
+      triggerLevel2();
+    } else {
+      gameActive = false;
+      showFinalScore("YOU WIN!");
+    }
+  }
+}
 
 
 //////////////////////////////
 // CREATE GRID
 //////////////////////////////
 
-const grid = document.querySelector("#grid");
+function buildGrid(extraCols = 0) {
+  const cfg = difficultyConfig[settings.difficulty];
+  const rows = cfg.rows;
+  const cols = cfg.cols + extraCols;
+  const spacing = 0.9;
 
-const rows = 4;
-const cols = 5;
-const spacing = 0.9;
+  const grid = document.querySelector("#grid");
+  while (grid.firstChild) grid.removeChild(grid.firstChild);
 
-for(let r=0;r<rows;r++){
-  for(let c=0;c<cols;c++){
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
 
-    const sphere = document.createElement("a-sphere");
+      const sphere = document.createElement("a-sphere");
+      const pattern = activePatterns[Math.floor(Math.random() * activePatterns.length)];
 
-    let pattern =
-      patterns[Math.floor(Math.random()*patterns.length)];
+      sphere.setAttribute("class", "grid-ball");
+      sphere.setAttribute("radius", "0.25");
+      sphere.setAttribute(
+        "position",
+        `${(c - cols/2 + 0.5) * spacing} ${1.6 + (rows/2 - r - 0.5) * spacing} -4`
+      );
+      sphere.dataset.pattern = pattern;
 
-    sphere.setAttribute("radius","0.25");
+      // Texture + tint instead of flat color
+      applyTexture(sphere, pattern);
 
-    sphere.setAttribute(
-      "position",
-      `${(c-cols/2)*spacing} ${1.6+(rows/2-r)*spacing} -4`
-    );
-
-    sphere.setAttribute("color",pattern);
-    sphere.dataset.pattern = pattern;
-
-    addGazeShootLogic(sphere);
-
-    grid.appendChild(sphere);
+      addGazeShootLogic(sphere);
+      grid.appendChild(sphere);
+    }
   }
+
+  gazeCursor.components.raycaster.refreshObjects();
 }
 
 
@@ -139,19 +1129,18 @@ for(let r=0;r<rows;r++){
 // GAZE SHOOT
 //////////////////////////////
 
-function addGazeShootLogic(ball){
-
-  ball.addEventListener("mouseenter",()=>{
-    if(!gameActive) return;
-    ball.setAttribute("scale","1.2 1.2 1.2");
+function addGazeShootLogic(ball) {
+  ball.addEventListener("mouseenter", () => {
+    if (!gameActive) return;
+    ball.setAttribute("scale", "1.2 1.2 1.2");
   });
 
-  ball.addEventListener("mouseleave",()=>{
-    ball.setAttribute("scale","1 1 1");
+  ball.addEventListener("mouseleave", () => {
+    ball.setAttribute("scale", "1 1 1");
   });
 
-  ball.addEventListener("click",()=>{
-    if(!gameActive) return;
+  ball.addEventListener("click", () => {
+    if (!gameActive) return;
     shootBall(ball);
   });
 }
@@ -161,57 +1150,94 @@ function addGazeShootLogic(ball){
 // SHOOTING
 //////////////////////////////
 
-function shootBall(target){
+function shootBall(target) {
   createProjectile(target);
 }
 
 
 //////////////////////////////
-// PROJECTILE + HIT CHECK
+// PROJECTILE + COLLISION
 //////////////////////////////
 
-function createProjectile(target){
+function createProjectile(target) {
+  // Guard: don't fire at already-removed targets
+  if (!target.parentNode) return;
 
   const projectile = document.createElement("a-sphere");
+  projectile.setAttribute("radius", "0.08");
+  projectile.setAttribute("color", "white");
+  projectile.setAttribute("position", "0 0.55 -0.5");
 
-  projectile.setAttribute("radius","0.08");
-  projectile.setAttribute("color","white");
-  projectile.setAttribute("position","0 1.6 -0.5");
-
-  document.querySelector("a-scene")
-    .appendChild(projectile);
+  document.querySelector("a-scene").appendChild(projectile);
 
   const targetPos = target.object3D.position;
 
-  projectile.setAttribute("animation",{
-    property:"position",
-    to:`${targetPos.x} ${targetPos.y} ${targetPos.z}`,
-    dur:500,
-    easing:"linear"
+  projectile.setAttribute("animation", {
+    property: "position",
+    to: `${targetPos.x} ${targetPos.y} ${targetPos.z}`,
+    dur: projectileDur,
+    easing: "linear"
   });
 
-  setTimeout(()=>{
+  let resolved = false;
 
-    if(target.dataset.pattern === targetPattern){
+  function resolveHit() {
+    if (resolved) return;
+    resolved = true;
+    clearInterval(collisionInterval);
 
-      target.parentNode.removeChild(target);
+    // Stop the animation
+    projectile.removeAttribute("animation");
 
-    }else{
-
-      // WRONG HIT → LOSE LIFE
-      lives--;
-      updateLives();
-
-      target.setAttribute("color","#333");
-
-      if(lives <= 0){
-        endGame();
-      }
+    if (!target.parentNode) {
+      // Target already gone (edge case) -- just clean up projectile
+      if (projectile.parentNode) projectile.parentNode.removeChild(projectile);
+      return;
     }
 
-    projectile.parentNode.removeChild(projectile);
+    if (target.dataset.pattern === targetPattern) {
+      score = Math.max(0, score + 10);
+      updateScore();
+      playHit();
+      target.parentNode.removeChild(target);
+      checkLevelClear();
+    } else {
+      score = Math.max(0, score - 5);
+      updateScore();
+      playMiss();
+      lives--;
+      updateLives();
+      greyOutSphere(target);
+      if (lives <= 0) endGame();
+    }
 
-  },500);
+    if (projectile.parentNode) projectile.parentNode.removeChild(projectile);
+  }
+
+  // Distance-based collision check every 50ms
+  const projVec   = new THREE.Vector3();
+  const targetVec = new THREE.Vector3();
+
+  const collisionInterval = setInterval(() => {
+    // Abort if either entity was removed
+    if (!projectile.parentNode || !target.parentNode) {
+      clearInterval(collisionInterval);
+      if (projectile.parentNode) projectile.parentNode.removeChild(projectile);
+      return;
+    }
+
+    projectile.object3D.getWorldPosition(projVec);
+    target.object3D.getWorldPosition(targetVec);
+
+    if (projVec.distanceTo(targetVec) < 0.35) {
+      resolveHit();
+    }
+  }, 50);
+
+  // Safety fallback: resolve at end of animation duration anyway
+  setTimeout(() => {
+    if (!resolved) resolveHit();
+  }, projectileDur + 100);
 }
 
 </script>
